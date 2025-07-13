@@ -6,33 +6,108 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 1em; text-align: center; position: relative; overflow-x: hidden; overflow-y: auto; background-color: #c1f7f2; margin: 0; min-height: 100vh; box-sizing: border-box; }
-    .marco { width: 90%; max-width: 600px; margin: 1em auto; border: 5px solid blue; border-radius: 1em; padding: 1em; background: white; box-sizing: border-box; }
-    h1 { font-size: 2.5em; margin: .2em 0; }
-    #recuentoOyentes { font-size: 1.1em; color: #555; }
-    #status { margin-bottom: 1em; font-size: 1.1em; }
-    button { margin: .5em; font-size: 1em; padding: .8em 1.5em; cursor: pointer; }
-    video { width: 100%; max-height: 300px; border-radius: .5em; background: black; margin-bottom: 1em; }
-    #midiSelectContainer select { margin-top: 1em; padding: .5em; font-size: 1em; }
-    #chatLog { width: 100%; height: 180px; margin: 1em 0 .5em; padding: .5em; border: 1px solid #ccc; overflow-y: auto; text-align: left; background: #fafafa; border-radius: .5em; }
-    #chatInput { width: 70%; padding: .5em; font-size: 1em; box-sizing: border-box; }
-    #sendChatBtn { padding: .6em 1em; font-size: 1em; cursor: pointer; margin-left: .5em; }
-    .chat-mensaje-propio { color: blue; }
-    .ripple { position: fixed; border-radius: 50%; transform: scale(0); pointer-events: none; animation: rippleAnim .8s ease-out forwards; }
-    @keyframes rippleAnim { to { transform: scale(15); opacity: 0; } }
+    body {
+      font-family: sans-serif;
+      padding: 1em;
+      text-align: center;
+      background-color: #c1f7f2;
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+    .marco {
+      width: 90%;
+      max-width: 600px;
+      margin: 1em auto;
+      padding: 1em;
+      background: white;
+      border: 5px solid blue;
+      border-radius: 1em;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin: 0.2em 0;
+    }
+    #recuentoOyentes,
+    #status {
+      font-size: 1.1em;
+      margin: 0.5em 0;
+      color: #555;
+    }
+    button {
+      margin: 0.5em;
+      font-size: 1em;
+      padding: 0.8em 1.5em;
+      cursor: pointer;
+    }
+    #remoteVideo {
+      width: 100%;
+      max-height: 300px;
+      background: black;
+      border-radius: 0.5em;
+      margin-bottom: 1em;
+    }
+    #midiSelectContainer select {
+      margin-top: 1em;
+      padding: 0.5em;
+      font-size: 1em;
+    }
+    #chatLog {
+      width: 100%;
+      height: 180px;
+      margin: 1em 0 0.5em;
+      padding: 0.5em;
+      border: 1px solid #ccc;
+      overflow-y: auto;
+      text-align: left;
+      background: #fafafa;
+      border-radius: 0.5em;
+    }
+    #chatInput {
+      width: 70%;
+      padding: 0.5em;
+      font-size: 1em;
+    }
+    #sendChatBtn {
+      padding: 0.6em 1em;
+      font-size: 1em;
+      margin-left: 0.5em;
+    }
+    .chat-mensaje-propio {
+      color: blue;
+    }
+    /* Ripple effect corregido */
+    .ripple {
+      position: fixed;
+      border-radius: 50%;
+      transform: scale(0);
+      pointer-events: none;
+      animation: rippleAnim 0.8s ease-out forwards;
+    }
+    @keyframes rippleAnim {
+      to { transform: scale(15); opacity: 0; }
+    }
   </style>
 </head>
 <body>
   <div class="marco">
     <h1>DreamEcho - Oyente</h1>
-    <p><a href="https://www.youtube.com/@rafgim" target="_blank">© By Rafael Gimeno</a></p>
+    <p><a href="https://www.youtube.com/@rafgim" target="_blank" rel="noopener">© By Rafael Gimeno</a></p>
+
     <!-- Vídeo remoto -->
-    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="remoteVideo" autoplay playsinline controls></video>
+
     <p id="recuentoOyentes">Oyentes conectados: --</p>
     <p id="status">Esperando conexión…</p>
+
     <button onclick="modoMIDI()">🎹 Usar mi piano digital</button>
     <button onclick="modoVirtual()">🎧 Escuchar con sonido virtual</button>
+
     <div id="midiSelectContainer"></div>
+
+    <!-- Chat -->
     <div id="chatControles">
       <div id="chatLog"></div>
       <input id="chatInput" placeholder="Escribe tu mensaje…" />
@@ -41,91 +116,185 @@
   </div>
 
   <script>
-    // Ripple effect\ n    function createColoredRipple(velocity) {
-      const size = 20;
-      const x = Math.random() * window.innerWidth;
-      const y = Math.random() * window.innerHeight;
-      const color = velocity <= 63 ? 'rgba(0,200,0,0.3)' : velocity <= 80 ? 'rgba(0,0,200,0.3)' : 'rgba(200,0,0,0.3)';
-      const circle = document.createElement('div');
-      Object.assign(circle.style, { width: `${size}px`, height: `${size}px`, left: `${x-size/2}px`, top: `${y-size/2}px`, backgroundColor: color });
-      circle.classList.add('ripple'); document.body.appendChild(circle);
-      setTimeout(() => circle.remove(),800);
-    }
-
-    // DOM elements
     const statusEl = document.getElementById('status');
     const oyentesEl = document.getElementById('recuentoOyentes');
-    const midiSelectContainer = document.getElementById('midiSelectContainer');
+    const remoteVideo = document.getElementById('remoteVideo');
     const chatLog = document.getElementById('chatLog');
     const chatInput = document.getElementById('chatInput');
     const sendChatBtn = document.getElementById('sendChatBtn');
-    const remoteVideo = document.getElementById('remoteVideo');
+    const midiSelectContainer = document.getElementById('midiSelectContainer');
 
-    // WebSocket and WebRTC setup
+    let firstEventTime = null;
+    let startPlaybackTime = null;
+    let audioStartTime = null;
+    let queuePos = null;
+    let queueLatency = null;
+    let mode = null;
+    let output = null;
+    let synth = null;
+
     const ws = new WebSocket('wss://dreamecho.onrender.com');
-    const pc = new RTCPeerConnection({ iceServers: [{ urls:'stun:stun.l.google.com:19302' }] });
-    let midiChannel;
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
 
-    pc.onicecandidate = ({candidate}) => { if(candidate) ws.send(JSON.stringify({type:'signal',candidate})); };
-    pc.ontrack = ev => { remoteVideo.srcObject = ev.streams[0]; };
-    pc.ondatachannel = e => { if(e.channel.label==='midi'){ midiChannel = e.channel; setupMidiListener(); } };
+    // —— WebRTC señalización ——
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) {
+        ws.send(JSON.stringify({ type: 'signal', candidate }));
+      }
+    };
+    pc.ontrack = ev => {
+      remoteVideo.srcObject = ev.streams[0];
+    };
+    pc.ondatachannel = ev => {
+      if (ev.channel.label === 'midi') {
+        ev.channel.onmessage = e => {
+          const { data, time } = JSON.parse(e.data);
+          handleMidiMessage(data, time);
+        };
+      }
+    };
 
     ws.onopen = () => {
-      statusEl.textContent='Conectado al servidor, esperando oferta...';
+      statusEl.textContent = 'Conectado al servidor, esperando oferta...';
     };
-    ws.onmessage = async event => {
-      const msg = JSON.parse(await event.data.text());
-      if(msg.type==='signal'){
-        if(msg.offer){ await pc.setRemoteDescription(msg.offer);
-          const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
-          ws.send(JSON.stringify({type:'signal',answer})); }
-        if(msg.answer) await pc.setRemoteDescription(msg.answer);
-        if(msg.candidate) await pc.addIceCandidate(msg.candidate);
+    ws.onmessage = async ({ data }) => {
+      let msg;
+      try { msg = JSON.parse(data); } catch { return; }
+
+      switch (msg.type) {
+        case 'stats':
+          oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
+          if (queuePos === null) {
+            queuePos = msg.clients;
+            queueLatency = 50 + 5 * Math.sqrt(queuePos);
+            statusEl.textContent =
+              `Posición en cola: ${queuePos} → latencia ≃ ${Math.round(queueLatency)} ms`;
+          }
+          break;
+
+        case 'chat':
+          appendChat(msg.user, msg.text);
+          break;
+
+        case 'signal':
+          if (msg.offer) {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            ws.send(JSON.stringify({
+              type: 'signal',
+              answer: pc.localDescription
+            }));
+          } else if (msg.answer) {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+          } else if (msg.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          }
+          break;
       }
-      if(msg.type==='stats'){
-        oyentesEl.textContent=`Oyentes conectados: ${msg.clients}`;
-        if(!window.queueLatency){ window.queuePos=msg.clients; window.queueLatency=50+5*Math.sqrt(queuePos);
-          statusEl.textContent=`Posición en cola: ${queuePos} → latencia ≃ ${Math.round(queueLatency)} ms`; }
-      }
-      if(msg.type==='chat'){ appendChat(msg.user,msg.text); }
     };
-    ws.onerror = ()=>statusEl.textContent='Error en la conexión.';
-    ws.onclose = ()=>statusEl.textContent='Conexión cerrada.';
+    ws.onerror = () => { statusEl.textContent = 'Error en la conexión.'; };
+    ws.onclose = () => { statusEl.textContent = 'Conexión cerrada.'; };
 
-    // Chat
-    const username = prompt('¿Cómo quieres que te vean en el chat?','Oyente')||'Oyente';
-    function appendChat(user,text){ const msgEl=document.createElement('div'); msgEl.innerHTML=`<small>[${new Date().toLocaleTimeString()}]</small> <strong>${user}:</strong> ${text}`;
-      if(user===username) msgEl.classList.add('chat-mensaje-propio');
-      chatLog.appendChild(msgEl); chatLog.scrollTop=chatLog.scrollHeight; }
-    function sendChat(){ if(chatInput.value&&ws.readyState===WebSocket.OPEN){ ws.send(JSON.stringify({type:'chat',user:username,text:chatInput.value})); chatInput.value=''; } }
-    sendChatBtn.addEventListener('click',sendChat);
-    chatInput.addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
+    // —— Chat ——
+    const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
+    function appendChat(user, text) {
+      const d = document.createElement('div');
+      d.innerHTML = `<small>[${new Date().toLocaleTimeString()}]</small> <strong>${user}:</strong> ${text}`;
+      if (user === username) d.classList.add('chat-mensaje-propio');
+      chatLog.appendChild(d);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+    function sendChat() {
+      const t = chatInput.value.trim();
+      if (!t || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: 'chat', user: username, text: t }));
+      chatInput.value = '';
+    }
+    sendChatBtn.addEventListener('click', sendChat);
+    chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
-    // MIDI listener
-    let firstEventTime=null, startPlaybackTime=null, audioStartTime=null;
-    function setupMidiListener(){ midiChannel.onmessage=({data})=>{
-      const {data:ArrayBytes,time} = JSON.parse(data);
-      const [st,note,vel]=ArrayBytes; const cmd=st&0xf0;
-      if(firstEventTime===null){ firstEventTime=time; startPlaybackTime=performance.now()+queueLatency; audioStartTime=Tone.now()+queueLatency/1000; }
-      scheduleMidi({data:ArrayBytes,time});
-    }; }
-    function scheduleMidi(msg){ const [st,note,vel]=msg.data; const rel=msg.time-window.firstEventTime;
-      if((st&0xf0)===0x90&&vel>0) createColoredRipple(vel);
-      if(modo==='midi'&&output){ const delay=Math.max(0,startPlaybackTime+rel-performance.now()); setTimeout(()=>output.send(new Uint8Array(msg.data)),delay); }
-      if(modo==='virtual'&&synth){ const freq=Tone.Frequency(msg.data[1],'midi').toFrequency(); const t=audioStartTime+rel/1000;
-        if((st&0xf0)===0x90&&vel>0){ synth.triggerAttack(freq,t,Math.pow(vel/127,2)); notasActivas.add(freq);}else if((st&0xf0)===0x80||(st&0xf0)===0x90&&vel===0){ synth.triggerRelease(freq,t); }} }
+    // —— MIDI físico ——
+    function modoMIDI() {
+      mode = 'midi';
+      statusEl.textContent = 'Buscando dispositivos MIDI…';
+      firstEventTime = startPlaybackTime = audioStartTime = null;
+      navigator.requestMIDIAccess().then(ma => {
+        const outs = Array.from(ma.outputs.values());
+        if (!outs.length) {
+          statusEl.textContent = 'No hay dispositivos MIDI.';
+          return;
+        }
+        midiSelectContainer.innerHTML = '';
+        const sel = document.createElement('select');
+        sel.innerHTML = '<option value=\"\">-- Elige salida MIDI --</option>';
+        outs.forEach(o => {
+          const opt = document.createElement('option');
+          opt.value = o.id; opt.text = o.name;
+          sel.appendChild(opt);
+        });
+        sel.addEventListener('change', () => {
+          output = ma.outputs.get(sel.value);
+          statusEl.textContent = `Salida MIDI: ${output.name}`;
+        });
+        midiSelectContainer.appendChild(sel);
+      }).catch(() => {
+        statusEl.textContent = 'No se pudo acceder a MIDI.';
+      });
+    }
 
-    // Physical MIDI mode
-    let output=null, modo=null, synth=null, notasActivas=new Set();
-    function modoMIDI(){ modo='midi'; statusEl.textContent='Buscando dispositivos MIDI…'; firstEventTime=null;
-      navigator.requestMIDIAccess().then(ma=>{ const outs=Array.from(ma.outputs.values()); if(outs.length){ midiSelectContainer.innerHTML=''; const sel=document.createElement('select'); sel.innerHTML='<option value="">-- Elige dispositivo MIDI --</option>';
-          outs.forEach(o=>sel.innerHTML+=`<option value="${o.id}">${o.name}</option>`);
-          sel.addEventListener('change',e=>{ output=ma.outputs.get(e.target.value); statusEl.textContent=`Salida MIDI: ${output?output.name:'ninguna'}`; }); midiSelectContainer.appendChild(sel); statusEl.textContent='Selecciona salida MIDI.'; }else statusEl.textContent='No hay salidas MIDI.'; }).catch(()=>statusEl.textContent='No se accedió a MIDI.'); }
+    // —— MIDI virtual ——
+    async function modoVirtual() {
+      mode = 'virtual';
+      statusEl.textContent = 'Cargando piano virtual…';
+      firstEventTime = audioStartTime = null;
+      await Tone.start();
+      synth = new Tone.Sampler({
+        urls: { A4: 'A4.mp3' },
+        baseUrl: 'https://tonejs.github.io/audio/salamander/',
+        release: 0.4
+      }).toDestination();
+      synth.onload = () => {
+        statusEl.textContent =
+          `Virtual listo. Posición: ${queuePos} → latencia ≃ ${Math.round(queueLatency)} ms`;
+      };
+    }
 
-    // Virtual mode
-    async function modoVirtual(){ modo='virtual'; statusEl.textContent='Cargando piano virtual…'; firstEventTime=null;
-      await Tone.start(); synth=new Tone.Sampler({ urls:{A0:'A0.mp3',C1:'C1.mp3',D#1:'Ds1.mp3',F#1:'Fs1.mp3', A1:'A1.mp3',C2:'C2.mp3',D#2:'Ds2.mp3',F#2:'Fs2.mp3', A2:'A2.mp3',C3:'C3.mp3',D#3:'Ds3.mp3',F#3:'Fs3.mp3', A3:'A3.mp3',C4:'C4.mp3',D#4:'Ds4.mp3',F#4:'Fs4.mp3', A4:'A4.mp3',C5:'C5.mp3',D#5:'Ds5.mp3',F#5:'Fs5.mp3', A5:'A5.mp3',C6:'C6.mp3',D#6:'Ds6.mp3',F#6:'Fs6.mp3', A7:'A7.mp3',C8:'C8.mp3'}, baseUrl:'https://tonejs.github.io/audio/salamander/', release:0.4 }).toDestination();
-      synth.onload = () => { statusEl.textContent=`Virtual listo. Posición: ${window.queuePos} → latencia ≃ ${Math.round(window.queueLatency)} ms`; } }
+    // —— Manejo de cada nota MIDI ——
+    function handleMidiMessage(data, time) {
+      const [st, note, vel] = data;
+      const cmd = st & 0xf0;
+      if (firstEventTime === null) {
+        firstEventTime = time;
+        startPlaybackTime = performance.now() + queueLatency;
+        audioStartTime   = Tone.now() + queueLatency / 1000;
+      }
+      const rel = time - firstEventTime;
+
+      // Visual ripple
+      if (cmd === 0x90 && vel > 0) {
+        const c = document.createElement('div');
+        c.classList.add('ripple');
+        document.body.appendChild(c);
+        setTimeout(() => c.remove(), 800);
+      }
+
+      // Piano físico
+      if (mode === 'midi' && output) {
+        const delay = Math.max(0, startPlaybackTime + rel - performance.now());
+        setTimeout(() => output.send(new Uint8Array(data)), delay);
+      }
+
+      // Piano virtual
+      if (mode === 'virtual' && synth) {
+        const freq    = Tone.Frequency(note, 'midi').toFrequency();
+        const tSec    = audioStartTime + rel / 1000;
+        if (cmd === 0x90 && vel > 0) synth.triggerAttack(freq, tSec, vel / 127);
+        if ((cmd === 0x80) || (cmd === 0x90 && vel === 0)) synth.triggerRelease(freq, tSec);
+      }
+    }
   </script>
 </body>
 </html>
