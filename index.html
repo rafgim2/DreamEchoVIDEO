@@ -43,9 +43,10 @@
     <p id="recuentoOyentes">Oyentes conectados: --</p>
     <p id="status">Esperando conexión…</p>
 
+    <button id="talkBtn">🎤 Pulsar para hablar</button>
+
     <button onclick="modoMIDI()">🎹 Usar mi piano digital</button>
     <button onclick="modoVirtual()">🎧 Escuchar con sonido virtual</button>
-    <button id="talkBtn">🎙️ Mantén para hablar</button>
 
     <div id="midiSelectContainer"></div>
 
@@ -61,11 +62,11 @@
     const oyentesEl = document.getElementById('recuentoOyentes');
     const remoteVideo = document.getElementById('remoteVideo');
     const localVideo = document.getElementById('localVideo');
+    const talkBtn = document.getElementById('talkBtn');
     const chatLog = document.getElementById('chatLog');
     const chatInput = document.getElementById('chatInput');
     const sendChatBtn = document.getElementById('sendChatBtn');
     const midiSelectContainer = document.getElementById('midiSelectContainer');
-    const talkBtn = document.getElementById('talkBtn');
 
     let output = null;
     let synth = null;
@@ -76,29 +77,9 @@
     const ws = new WebSocket('wss://dreamecho.onrender.com');
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     let midiChannel = null;
-
     let pressingTalk = false;
     let remoteSpeaking = false;
     let audioTrack = null;
-
-    function updateMicState() {
-      if (audioTrack) audioTrack.enabled = pressingTalk && !remoteSpeaking;
-    }
-
-    function pressTalk() {
-      pressingTalk = true;
-      ws.send(JSON.stringify({ type: 'talk', speaking: true }));
-      updateMicState();
-    }
-
-    function releaseTalk() {
-      pressingTalk = false;
-      ws.send(JSON.stringify({ type: 'talk', speaking: false }));
-      updateMicState();
-    }
-
-    ['mousedown', 'touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
-    ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
 
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) ws.send(JSON.stringify({ type: 'signal', candidate }));
@@ -115,20 +96,7 @@
       }
     };
 
-    ws.onopen = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-        localVideo.srcObject = stream;
-        audioTrack = stream.getAudioTracks()[0];
-        audioTrack.enabled = false;
-        statusEl.textContent = 'Conectado, esperando oferta...';
-      } catch (err) {
-        console.error('Error al acceder a la cámara o micrófono:', err);
-        statusEl.textContent = 'No se pudo acceder a la cámara o micrófono.';
-      }
-    };
-
+    ws.onopen = () => { statusEl.textContent = 'Conectado, esperando oferta...'; };
     ws.onmessage = async ({ data }) => {
       const msg = JSON.parse(typeof data === 'string' ? data : await data.text());
       switch (msg.type) {
@@ -138,12 +106,9 @@
         case 'chat':
           appendChat(msg.user, msg.text);
           break;
-        case 'talk':
-          remoteSpeaking = msg.speaking;
-          updateMicState();
-          break;
         case 'signal':
           if (msg.offer) {
+            await setupLocalStream();
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -154,9 +119,12 @@
             await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
           }
           break;
+        case 'talk':
+          remoteSpeaking = msg.speaking;
+          updateMicState();
+          break;
       }
     };
-
     ws.onerror = () => { statusEl.textContent = 'Error en la conexión.'; };
     ws.onclose = () => { statusEl.textContent = 'Conexión cerrada.'; };
 
@@ -177,6 +145,33 @@
     }
     sendChatBtn.addEventListener('click', sendChat);
     chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+    function pressTalk() {
+      pressingTalk = true;
+      ws.send(JSON.stringify({ type: 'talk', speaking: true }));
+      updateMicState();
+    }
+
+    function releaseTalk() {
+      pressingTalk = false;
+      ws.send(JSON.stringify({ type: 'talk', speaking: false }));
+      updateMicState();
+    }
+
+    function updateMicState() {
+      if (audioTrack) audioTrack.enabled = pressingTalk && !remoteSpeaking;
+    }
+
+    ['mousedown', 'touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
+    ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
+
+    async function setupLocalStream() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      localVideo.srcObject = stream;
+      audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) audioTrack.enabled = false;
+    }
 
     function modoMIDI() {
       statusEl.textContent = 'Buscando dispositivos MIDI…';
