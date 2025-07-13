@@ -10,10 +10,10 @@
     .marco { width: 90%; max-width: 700px; margin: 1em auto; padding: 1em; background: white; border: 5px solid blue; border-radius: 1em; box-sizing: border-box; }
     h1 { font-size: 2.5em; margin: 0.2em 0; }
     .video-box { display: flex; gap: 1em; justify-content: center; margin-bottom: 1em; }
-    .video-wrap { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; }
-    .video-wrap span { font-size: 0.95em; color: #888; margin-top: 0.4em; }
-    video { width: 100%; max-height: 300px; background: black; border-radius: 0.5em; }
-    #talkStatus { margin-bottom: 1em; font-size: 1em; color: #555; }
+    .video-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; }
+    video { width: 100%; max-height: 250px; background: black; border-radius: 0.5em; }
+    .video-wrap span { margin-top: .4em; font-size: .95em; color: #555; }
+    #talkStatus { margin-bottom: 1em; font-size:1em; color:#555; }
     #talkBtn {
       background: blue;
       color: white;
@@ -24,17 +24,18 @@
       margin-bottom: 1em;
       cursor: pointer;
       box-shadow: 0 2px 7px rgba(0,0,255,0.2);
-      outline: none;
       transition: background 0.18s;
     }
-    #talkBtn:active { background: #003cb3; }
+    #talkBtn:active { background: #0033aa; }
     #recuentoOyentes, #status { font-size: 1.1em; color: #555; margin: 0.5em 0; }
-    button.control { margin: 0.5em; font-size: 1em; padding: 0.8em 1.5em; cursor: pointer; }
+    button.modeBtn { margin: 0.5em; font-size: 1em; padding: 0.8em 1.5em; cursor: pointer; }
+    #midiSelectContainer select { margin-top: 1em; padding: 0.5em; font-size: 1em; }
     #chatLog { width: 100%; height: 180px; margin: 1em 0 0.5em; padding: 0.5em; border: 1px solid #ccc; overflow-y: auto; text-align: left; background: #fafafa; border-radius: 0.5em; }
     #chatInput { width: 70%; padding: 0.5em; font-size: 1em; }
     #sendChatBtn { padding: 0.6em 1em; font-size: 1em; margin-left: 0.5em; cursor: pointer; }
     .chat-mensaje-propio { color: blue; }
-    #midiSelectContainer select { margin-top: 1em; padding: 0.5em; font-size: 1em; }
+    .ripple { position: fixed; border-radius: 50%; transform: scale(0); pointer-events: none; animation: rippleAnim 0.8s ease-out forwards; }
+    @keyframes rippleAnim { to { transform: scale(15); opacity: 0; } }
   </style>
 </head>
 <body>
@@ -48,8 +49,8 @@
         <span>Tú</span>
       </div>
       <div class="video-wrap">
-        <video id="remoteVideo" autoplay playsinline controls></video>
-        <span>Artista</span>
+        <video id="remoteVideo" autoplay playsinline></video>
+        <span>Emisor</span>
       </div>
     </div>
 
@@ -59,8 +60,8 @@
     <p id="recuentoOyentes">Oyentes conectados: --</p>
     <p id="status">Esperando conexión…</p>
 
-    <button class="control" onclick="modoMIDI()">🎹 Usar mi piano digital</button>
-    <button class="control" onclick="modoVirtual()">🎧 Escuchar con sonido virtual</button>
+    <button class="modeBtn" onclick="modoMIDI()">🎹 Usar mi piano digital</button>
+    <button class="modeBtn" onclick="modoVirtual()">🎧 Escuchar con sonido virtual</button>
     <div id="midiSelectContainer"></div>
 
     <div id="chatControles">
@@ -71,24 +72,20 @@
   </div>
 
   <script>
-    // ------------------------------------
-    // 1) Captura local de cámara y micrófono
-    // ------------------------------------
+    // 1) Captura cámara y micrófono local al cargar
     let localStream = null;
     (async () => {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('localVideo').srcObject = localStream;
       } catch (err) {
-        alert('Error accediendo a cámara/micro: ' + err.name);
+        alert('Error cámara/micro: ' + err.name);
         console.error(err);
       }
     })();
 
-    // ------------------------------------
     // 2) Variables globales
-    // ------------------------------------
-    let ws = null, pc = null, midiChannel = null, activeMIDIOutput = null;
+    let ws = null, pc = null, midiChannel = null, activeMIDIInput = null;
     let startTime = null, prevClients = 0;
     let remoteStream = null;
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
@@ -96,9 +93,7 @@
     // Walkie-talkie
     let localAudioTrack = null, isTalking = false, otherIsTalking = false;
 
-    // ------------------------------------
-    // 3) Inicializa WebSocket
-    // ------------------------------------
+    // 3) Iniciar WebSocket
     function initWebSocket() {
       ws = new WebSocket('wss://dreamecho.onrender.com');
       ws.onopen = () => {
@@ -109,8 +104,8 @@
         if (msg.type === 'stats') {
           document.getElementById('recuentoOyentes').textContent = `Oyentes conectados: ${msg.clients}`;
         }
-        if (msg.type === 'signal') await handleSignal(msg);
         if (msg.type === 'chat') appendChat(msg.user, msg.text);
+        if (msg.type === 'signal') await handleSignal(msg);
       };
       ws.onerror = () => { document.getElementById('status').textContent = 'Error en la conexión.'; };
       ws.onclose = () => { document.getElementById('status').textContent = 'Conexión cerrada.'; };
@@ -122,10 +117,9 @@
       }
     }
 
-    // ------------------------------------
-    // 4) Arranca o renegocia WebRTC
-    // ------------------------------------
+    // 4) Iniciar / renegociar WebRTC
     async function startWebRTC() {
+      // Cerrar conexión anterior
       if (pc) try { pc.close(); } catch {}
       pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
@@ -141,7 +135,7 @@
         }
       };
 
-      // Canal midi y walkie entrante
+      // DataChannel (si el artista lo creó primero)
       pc.ondatachannel = ev => {
         if (ev.channel.label === 'midi') {
           midiChannel = ev.channel;
@@ -149,12 +143,11 @@
         }
       };
 
-      // Añade tus tracks locales
+      // Añadir tracks locales
       if (localStream) {
-        // Track local de audio para walkie
+        // Track para walkie
         localAudioTrack = localStream.getAudioTracks()[0];
         if (localAudioTrack) localAudioTrack.enabled = false;
-        // Añade pista al peer
         localStream.getTracks().forEach(track => {
           if (!pc.getSenders().find(s => s.track && s.track.id === track.id)) {
             pc.addTrack(track, localStream);
@@ -162,26 +155,25 @@
         });
       }
 
-      // Negocia
-      const answerNeeded = false;
-      // El oyente espera oferta
-      pc.createOffer = undefined; // no genera oferta, espera offer del artista
-      // En su lugar: cuando llegue offer en handleSignal se responderá
+      // Crear canal MIDI si no existe
+      if (!midiChannel || midiChannel.readyState === 'closed') {
+        midiChannel = pc.createDataChannel('midi');
+        midiChannel.onmessage = handleDataChannelMessage;
+      }
+
+      // Oferta / respuesta
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal({ offer: pc.localDescription });
+      }
     }
 
-    // ------------------------------------
-    // 5) Manejo de señalización
-    // ------------------------------------
+    // 5) Manejo señalización
     async function handleSignal(msg) {
       if (msg.offer) {
-        // Recibe oferta del artista
+        await startWebRTC();               // en caso de que no hayamos arrancado
         await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-        // Crea canal de datos midi si no existe
-        if (!midiChannel || midiChannel.readyState === 'closed') {
-          midiChannel = pc.createDataChannel('midi');
-          midiChannel.onmessage = handleDataChannelMessage;
-        }
-        // Respuesta
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         sendSignal({ answer: pc.localDescription });
@@ -194,9 +186,7 @@
       }
     }
 
-    // ------------------------------------
     // 6) Chat
-    // ------------------------------------
     function appendChat(user, text) {
       const log = document.getElementById('chatLog');
       const msgEl = document.createElement('div');
@@ -207,92 +197,99 @@
       log.scrollTop = log.scrollHeight;
     }
     document.getElementById('sendChatBtn').addEventListener('click', () => {
-      const inp = document.getElementById('chatInput');
-      const txt = inp.value.trim();
-      if (txt && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'chat', user: username, text: txt }));
-        inp.value = '';
+      const t = document.getElementById('chatInput').value.trim();
+      if (t && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'chat', user: username, text: t }));
+        document.getElementById('chatInput').value = '';
       }
     });
     document.getElementById('chatInput').addEventListener('keydown', e => {
       if (e.key === 'Enter') document.getElementById('sendChatBtn').click();
     });
 
-    // ------------------------------------
-    // 7) MIDI y piano virtual
-    // ------------------------------------
+    // 7) MIDI Oyente (igual que antes)
     function modoMIDI() {
       document.getElementById('status').textContent = 'Buscando dispositivos MIDI…';
       navigator.requestMIDIAccess().then(ma => {
         const outputs = Array.from(ma.outputs.values());
         if (!outputs.length) { document.getElementById('status').textContent = 'No hay dispositivos MIDI.'; return; }
-        const container = document.getElementById('midiSelectContainer');
-        container.innerHTML = '';
+        const c = document.getElementById('midiSelectContainer');
+        c.innerHTML = '';
         const sel = document.createElement('select');
         sel.innerHTML = '<option value="">-- Elige salida MIDI --</option>';
         outputs.forEach(o => sel.innerHTML += `<option value="${o.id}">${o.name}</option>`);
-        sel.onchange = () => { activeMIDIOutput = ma.outputs.get(sel.value); document.getElementById('status').textContent = `Salida MIDI: ${activeMIDIOutput.name}`; };
-        sel.value = outputs[0].id;
-        sel.dispatchEvent(new Event('change'));
-        container.appendChild(sel);
+        sel.onchange = () => { activeMIDIInput = ma.outputs.get(sel.value); document.getElementById('status').textContent = `Salida MIDI: ${activeMIDIInput.name}`; };
+        c.appendChild(sel);
       }).catch(() => { document.getElementById('status').textContent = 'No se pudo acceder a MIDI.'; });
     }
 
+    let synth = null, pedal = false, notasActivas = new Set(), notasSostenidas = new Set();
     async function modoVirtual() {
       document.getElementById('status').textContent = 'Cargando piano virtual…';
+      pedal = false; notasActivas.clear(); notasSostenidas.clear();
       await Tone.start();
-      window.synth = new Tone.Sampler({
-        urls: { A0:'A0.mp3', C1:'C1.mp3', 'D#1':'Ds1.mp3', F#1:'Fs1.mp3', A1:'A1.mp3', C2:'C2.mp3', 'D#2':'Ds2.mp3', F#2:'Fs2.mp3', A2:'A2.mp3', C3:'C3.mp3', 'D#3':'Ds3.mp3', F#3:'Fs3.mp3', A3:'A3.mp3', C4:'C4.mp3', 'D#4':'Ds4.mp3', F#4:'Fs4.mp3', A4:'A4.mp3', C5:'C5.mp3', 'D#5':'Ds5.mp3', F#5:'Fs5.mp3', A5:'A5.mp3', C6:'C6.mp3', 'D#6':'Ds6.mp3', F#6:'Fs6.mp3', A7:'A7.mp3', C8:'C8.mp3' },
+      synth = new Tone.Sampler({
+        urls: { A0: 'A0.mp3', C1: 'C1.mp3', 'D#1': 'Ds1.mp3', F#1: 'Fs1.mp3',
+                A1: 'A1.mp3', C2: 'C2.mp3', 'D#2': 'Ds2.mp3', F#2: 'Fs2.mp3',
+                A2: 'A2.mp3', C3: 'C3.mp3', 'D#3': 'Ds3.mp3', F#3: 'Fs3.mp3',
+                A3: 'A3.mp3', C4: 'C4.mp3', 'D#4': 'Ds4.mp3', F#4: 'Fs4.mp3',
+                A4: 'A4.mp3', C5: 'C5.mp3', 'D#5': 'Ds5.mp3', F#5: 'Fs5.mp3',
+                A5: 'A5.mp3', C6: 'C6.mp3', 'D#6': 'Ds6.mp3', F#6: 'Fs6.mp3',
+                A7: 'A7.mp3', C8: 'C8.mp3' },
         baseUrl: 'https://tonejs.github.io/audio/salamander/',
         release: 0.4,
         onload: () => { document.getElementById('status').textContent = 'Modo virtual listo.'; }
       }).toDestination();
     }
 
-    // ------------------------------------
-    // 8) Manejo de mensajes DataChannel (MIDI y Walkie)
-    // ------------------------------------
-    function handleDataChannelMessage(ev) {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === 'walkie') {
-        otherIsTalking = msg.talking;
-        // Silencia al artista si tú hablas
-        const remoteAudioTracks = remoteStream.getAudioTracks();
-        remoteAudioTracks.forEach(t => t.enabled = !otherIsTalking);
-        setTalkStatus();
+    function handleMidiMessage(msg) {
+      const [st, note, vel] = msg.data;
+      const cmd = st & 0xf0;
+      if (cmd === 0x90 && vel > 0) {
+        const dot = document.createElement('div'); dot.classList.add('ripple'); document.body.appendChild(dot);
+        setTimeout(() => dot.remove(), 800);
       }
-      if (msg.type === 'midi') {
-        // reproducir MIDI en virtual o hardware
-        const [st, note, vel] = msg.data;
-        const cmd = st & 0xf0;
-        // MIDI físico
-        if (activeMIDIOutput) activeMIDIOutput.send(new Uint8Array(msg.data));
-        // Virtual
-        if (window.synth) {
-          const freq = Tone.Frequency(note, 'midi').toFrequency();
-          if (cmd === 0x90 && vel>0) {
-            const velNorm = vel/127, velScaled = velNorm*velNorm;
-            window.synth.triggerAttack(freq, Tone.now(), velScaled);
-          } else {
-            window.synth.triggerRelease(freq, Tone.now());
-          }
+      if (activeMIDIInput) activeMIDIInput.send(new Uint8Array(msg.data));
+      if (synth) {
+        const freq = Tone.Frequency(note, 'midi').toFrequency();
+        if (cmd === 0x90 && vel > 0) {
+          const velN = vel / 127, velS = velN * velN;
+          synth.triggerAttack(freq, Tone.now(), velS);
+          notasActivas.add(freq); notasSostenidas.delete(freq);
+        } else if (cmd === 0x80 || (cmd===0x90&&vel===0)) {
+          if (pedal) { notasActivas.delete(freq); notasSostenidas.add(freq); }
+          else { synth.triggerRelease(freq, Tone.now()); notasActivas.delete(freq); notasSostenidas.delete(freq); }
+        } else if (st===176 && note===64) {
+          pedal = vel>=64;
+          if (!pedal) notasSostenidas.forEach(f=>{synth.triggerRelease(f,Tone.now()); notasSostenidas.delete(f);});
         }
       }
     }
 
-    // ------------------------------------
-    // 9) Walkie-talkie UI
-    // ------------------------------------
+    // 8) Walkie-talkie
     function setTalkStatus() {
       const st = document.getElementById('talkStatus');
-      if (isTalking) st.innerHTML = `<b>Estás hablando</b> (tu micro activo)`;
-      else if (otherIsTalking) st.innerHTML = `<b>El artista habla</b> (silenciado)`;
+      if (isTalking) st.innerHTML = `<b>Estás hablando</b> (micrófono activo)`;
+      else if (otherIsTalking) st.innerHTML = `<b>El Emisor está hablando</b> (su micro silenciado)`;
       else st.innerHTML = `Walkie-talkie: Mantén pulsado para hablar`;
     }
     function sendWalkieSignal(talking) {
       if (midiChannel && midiChannel.readyState==='open') {
         midiChannel.send(JSON.stringify({ type:'walkie', talking }));
       }
+    }
+    function handleDataChannelMessage(ev) {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type==='walkie') {
+          otherIsTalking = msg.talking;
+          // silencia al emisor
+          const tracks = remoteStream?.getAudioTracks()||[];
+          tracks.forEach(t=> t.enabled = !otherIsTalking);
+          setTalkStatus();
+        }
+        if (msg.type==='midi') handleMidiMessage(msg);
+      } catch {}
     }
     const talkBtn = document.getElementById('talkBtn');
     talkBtn.addEventListener('mousedown', () => {
@@ -301,19 +298,28 @@
       sendWalkieSignal(true);
       setTalkStatus();
     });
-    ['mouseup','mouseleave','touchend','touchcancel'].forEach(evt =>
-      talkBtn.addEventListener(evt, () => {
-        isTalking = false;
-        if (localAudioTrack) localAudioTrack.enabled = false;
+    talkBtn.addEventListener('mouseup', () => {
+      isTalking = false;
+      if (localAudioTrack) localAudioTrack.enabled = false;
+      sendWalkieSignal(false);
+      setTalkStatus();
+    });
+    ['mouseleave','touchend','touchcancel'].forEach(evt=>
+      talkBtn.addEventListener(evt, ()=>{
+        isTalking=false;
+        if(localAudioTrack)localAudioTrack.enabled=false;
         sendWalkieSignal(false);
         setTalkStatus();
       })
     );
 
-    // ------------------------------------
-    // 10) Inicia la conexión
-    // ------------------------------------
+    // 9) Arranca todo
     initWebSocket();
+    // Y cuando recibas la primera señal de stats, lanza startWebRTC
+    ws?.addEventListener('message', ({data})=>{
+      const m=JSON.parse(data);
+      if(m.type==='stats') startWebRTC();
+    });
   </script>
 </body>
 </html>
