@@ -46,6 +46,7 @@
   </div>
 
   <script>
+    // DOM elements
     const statusEl = document.getElementById('status');
     const oyentesEl = document.getElementById('recuentoOyentes');
     const remoteVideo = document.getElementById('remoteVideo');
@@ -54,49 +55,43 @@
     const sendChatBtn = document.getElementById('sendChatBtn');
     const midiSelectContainer = document.getElementById('midiSelectContainer');
 
-    let firstEventTime = null;
-    let startPlaybackTime = null;
-    let audioStartTime = null;
-    let queuePos = null;
-    let queueLatency = null;
-    let mode = null;
+    // MIDI and virtual piano state
     let output = null;
     let synth = null;
     let pedal = false;
     const notasActivas = new Set();
     const notasSostenidas = new Set();
 
+    // WebSocket and PeerConnection
     const ws = new WebSocket('wss://dreamecho.onrender.com');
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     let midiChannel = null;
 
+    // Ice candidates
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) ws.send(JSON.stringify({ type: 'signal', candidate }));
     };
+
+    // Display remote video
     pc.ontrack = ev => {
       remoteVideo.srcObject = ev.streams[0];
     };
+
+    // Receive MIDI channel
     pc.ondatachannel = ev => {
       if (ev.channel.label === 'midi') {
         midiChannel = ev.channel;
-        midiChannel.onmessage = ({ data }) => {
-          const msg = JSON.parse(data);
-          handleMidiMessage(msg);
-        };
+        midiChannel.onmessage = ({ data }) => handleMidiMessage(JSON.parse(data));
       }
     };
 
-    ws.onopen = () => { statusEl.textContent = 'Conectado al servidor, esperando oferta...'; };
+    // WebSocket events
+    ws.onopen = () => { statusEl.textContent = 'Conectado, esperando oferta...'; };
     ws.onmessage = async ({ data }) => {
       const msg = JSON.parse(typeof data === 'string' ? data : await data.text());
       switch (msg.type) {
         case 'stats':
           oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
-          if (queuePos === null) {
-            queuePos = msg.clients;
-            queueLatency = 50 + 5 * Math.sqrt(queuePos);
-            statusEl.textContent = `Posición en cola: ${queuePos} → latencia ≃ ${Math.round(queueLatency)} ms`;
-          }
           break;
         case 'chat':
           appendChat(msg.user, msg.text);
@@ -119,6 +114,7 @@
     ws.onerror = () => { statusEl.textContent = 'Error en la conexión.'; };
     ws.onclose = () => { statusEl.textContent = 'Conexión cerrada.'; };
 
+    // Chat
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
     function appendChat(user, text) {
       const msgEl = document.createElement('div');
@@ -137,39 +133,27 @@
     sendChatBtn.addEventListener('click', sendChat);
     chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
+    // Use digital piano
     function modoMIDI() {
-      mode = 'midi';
       statusEl.textContent = 'Buscando dispositivos MIDI…';
-      firstEventTime = null;
       navigator.requestMIDIAccess().then(ma => {
         const outputs = Array.from(ma.outputs.values());
-        if (!outputs.length) {
-          statusEl.textContent = 'No hay dispositivos MIDI.';
-          return;
-        }
+        if (!outputs.length) { statusEl.textContent = 'No hay dispositivos MIDI.'; return; }
         midiSelectContainer.innerHTML = '';
         const sel = document.createElement('select');
         sel.innerHTML = '<option value="">-- Elige salida MIDI --</option>';
-        outputs.forEach(o => {
-          sel.innerHTML += `<option value="${o.id}">${o.name}</option>`;
-        });
-        sel.onchange = () => {
-          output = ma.outputs.get(sel.value);
-          statusEl.textContent = `Salida MIDI: ${output.name}`;
-        };
+        outputs.forEach(o => sel.innerHTML += `<option value="${o.id}">${o.name}</option>`);
+        sel.onchange = () => { output = ma.outputs.get(sel.value); statusEl.textContent = `Salida MIDI: ${output.name}`; };
         sel.value = outputs[0].id;
         sel.dispatchEvent(new Event('change'));
         midiSelectContainer.appendChild(sel);
       }).catch(() => { statusEl.textContent = 'No se pudo acceder a MIDI.'; });
     }
 
+    // Use virtual piano
     async function modoVirtual() {
-      mode = 'virtual';
       statusEl.textContent = 'Cargando piano virtual…';
-      firstEventTime = null;
-      pedal = false;
-      notasActivas.clear();
-      notasSostenidas.clear();
+      pedal = false; notasActivas.clear(); notasSostenidas.clear();
       await Tone.start();
       synth = new Tone.Sampler({
         urls: { A0: 'A0.mp3', C1: 'C1.mp3', 'D#1': 'Ds1.mp3', 'F#1': 'Fs1.mp3',
@@ -181,63 +165,48 @@
                 A7: 'A7.mp3', C8: 'C8.mp3' },
         baseUrl: 'https://tonejs.github.io/audio/salamander/',
         release: 0.4,
-        onload: () => {
-          statusEl.textContent = `Modo virtual listo. Posición: ${queuePos} → latencia ≃ ${Math.round(queueLatency)} ms`;
-        }
+        onload: () => { statusEl.textContent = 'Modo virtual listo.'; }
       }).toDestination();
     }
 
+    // Handle incoming MIDI messages immediately
     function handleMidiMessage(msg) {
       const [st, note, vel] = msg.data;
-      const command = st & 0xf0;
-      const eventTime = msg.time;
-      if (firstEventTime === null) {
-        firstEventTime = eventTime;
-        startPlaybackTime = performance.now() + queueLatency;
-        audioStartTime = Tone.now() + queueLatency / 1000;
-      }
-      const relative = eventTime - firstEventTime;
-      const timeSec = audioStartTime + relative / 1000;
-
+      const cmd = st & 0xf0;
       // Visual ripple
-      if (command === 0x90 && vel > 0) {
+      if (cmd === 0x90 && vel > 0) {
         const dot = document.createElement('div'); dot.classList.add('ripple'); document.body.appendChild(dot);
         setTimeout(() => dot.remove(), 800);
       }
-
-      // Physical MIDI output
-      if (mode === 'midi' && output) {
-        const delay = Math.max(0, startPlaybackTime + relative - performance.now());
-        setTimeout(() => output.send(new Uint8Array(msg.data)), delay);
+      // Physical MIDI
+      if (output) {
+        output.send(new Uint8Array(msg.data));
       }
-
       // Virtual piano
-      if (mode === 'virtual' && synth) {
-        if (command === 0x90 && vel > 0) {
+      if (synth) {
+        const freq = Tone.Frequency(note, 'midi').toFrequency();
+        if (cmd === 0x90 && vel > 0) {
           const velNorm = vel / 127;
           const velScaled = Math.pow(velNorm, 2);
-          const freq = Tone.Frequency(note, 'midi').toFrequency();
-          synth.triggerAttack(freq, timeSec, velScaled);
+          synth.triggerAttack(freq, Tone.now(), velScaled);
           notasActivas.add(freq);
           notasSostenidas.delete(freq);
-        } else if (command === 0x80 || (command === 0x90 && vel === 0)) {
-          const freq = Tone.Frequency(note, 'midi').toFrequency();
+        } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
           if (pedal) {
-            notasActivas.delete(freq);
-            notasSostenidas.add(freq);
+            notasActivas.delete(freq); notasSostenidas.add(freq);
           } else {
-            synth.triggerRelease(freq, timeSec);
-            notasActivas.delete(freq);
-            notasSostenidas.delete(freq);
+            synth.triggerRelease(freq, Tone.now());
+            notasActivas.delete(freq); notasSostenidas.delete(freq);
           }
         } else if (st === 176 && note === 64) {
           const isDown = vel >= 64;
-          if (isDown) pedal = true;
-          else {
+          if (isDown) {
+            pedal = true;
+          } else {
             pedal = false;
             notasSostenidas.forEach(f => {
               if (!notasActivas.has(f)) {
-                synth.triggerRelease(f, timeSec);
+                synth.triggerRelease(f, Tone.now());
                 notasSostenidas.delete(f);
               }
             });
