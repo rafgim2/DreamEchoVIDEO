@@ -13,23 +13,16 @@
       background-color: #c1f7f2;
       margin: 0;
       min-height: 100vh;
-      overflow-x: hidden;
-      overflow-y: auto;
     }
     .marco {
       width: 90%;
-      max-width: 700px;
+      max-width: 800px;
       margin: 1em auto;
       padding: 1em;
       background: white;
       border: 5px solid blue;
       border-radius: 1em;
-      box-sizing: border-box;
     }
-    h1 { font-size: 2.5em; margin: 0.2em 0; }
-    #recuentoOyentes, #status { font-size: 1.1em; color: #555; margin: 0.5em 0; }
-    button { margin: 0.5em; font-size: 1em; padding: 0.8em 1.5em; cursor: pointer; }
-
     .video-container {
       display: flex;
       gap: 1em;
@@ -54,26 +47,22 @@
       font-weight: bold;
       color: #333;
     }
-    #talkBtn {
-      padding: 0.8em 2em;
+    #recuentoOyentes, #status {
       font-size: 1.1em;
-      margin: 1em 0;
-      border: none;
-      border-radius: 0.7em;
-      background: #2196f3;
-      color: white;
+      color: #555;
+      margin: 0.5em 0;
+    }
+    button {
+      margin: 0.5em;
+      font-size: 1em;
+      padding: 0.8em 1.5em;
       cursor: pointer;
     }
-    #talkBtn:active {
-      transform: scale(0.96);
-    }
-
     #midiSelectContainer select {
       margin-top: 1em;
       padding: 0.5em;
       font-size: 1em;
     }
-
     #chatLog {
       width: 100%;
       height: 180px;
@@ -85,22 +74,18 @@
       background: #fafafa;
       border-radius: 0.5em;
     }
-
-    #chatInput { width: 70%; padding: 0.5em; font-size: 1em; }
-    #sendChatBtn { padding: 0.6em 1em; font-size: 1em; margin-left: 0.5em; cursor: pointer; }
+    #chatInput {
+      width: 70%;
+      padding: 0.5em;
+      font-size: 1em;
+    }
+    #sendChatBtn {
+      padding: 0.6em 1em;
+      font-size: 1em;
+      margin-left: 0.5em;
+      cursor: pointer;
+    }
     .chat-mensaje-propio { color: blue; }
-
-    .ripple {
-      position: fixed;
-      border-radius: 50%;
-      transform: scale(0);
-      pointer-events: none;
-      animation: rippleAnim 0.8s ease-out forwards;
-    }
-
-    @keyframes rippleAnim {
-      to { transform: scale(15); opacity: 0; }
-    }
   </style>
 </head>
 <body>
@@ -119,11 +104,10 @@
       </div>
     </div>
 
-    <button id="talkBtn">📢 Mantén pulsado para hablar</button>
-
     <p id="recuentoOyentes">Oyentes conectados: --</p>
     <p id="status">Esperando conexión…</p>
 
+    <button id="talkBtn">🎤 Mantener para hablar</button>
     <button onclick="modoMIDI()">🎹 Usar mi piano digital</button>
     <button onclick="modoVirtual()">🎧 Escuchar con sonido virtual</button>
 
@@ -139,8 +123,8 @@
   <script>
     const statusEl = document.getElementById('status');
     const oyentesEl = document.getElementById('recuentoOyentes');
-    const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
+    const localVideo = document.getElementById('localVideo');
     const talkBtn = document.getElementById('talkBtn');
     const chatLog = document.getElementById('chatLog');
     const chatInput = document.getElementById('chatInput');
@@ -161,42 +145,28 @@
     let pressingTalk = false;
     let remoteSpeaking = false;
 
-    const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
+    function updateMicState() {
+      if (audioTrack) audioTrack.enabled = pressingTalk && !remoteSpeaking;
+    }
 
-    async function initLocalVideo() {
+    async function initLocalMedia() {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
-        localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-        audioTrack = localStream.getAudioTracks()[0];
-        audioTrack.enabled = false;
-      } catch (err) {
-        console.error('No se pudo acceder a la cámara o micro:', err);
-        statusEl.textContent = '⚠️ No se pudo acceder a cámara/micro.';
+        localStream.getTracks().forEach(track => {
+          if (track.kind === 'audio') {
+            audioTrack = track;
+            track.enabled = false; // Micrófono desactivado al principio
+          }
+          pc.addTrack(track, localStream);
+        });
+      } catch (e) {
+        console.error('Error al acceder a la cámara/micrófono:', e);
+        statusEl.textContent = '⚠️ No se pudo acceder a la cámara o micrófono';
       }
     }
 
-    initLocalVideo();
-
-    function updateMicState() {
-      if (!audioTrack) return;
-      audioTrack.enabled = pressingTalk && !remoteSpeaking;
-    }
-
-    function pressTalk() {
-      pressingTalk = true;
-      ws.send(JSON.stringify({ type: 'talk', speaking: true }));
-      updateMicState();
-    }
-
-    function releaseTalk() {
-      pressingTalk = false;
-      ws.send(JSON.stringify({ type: 'talk', speaking: false }));
-      updateMicState();
-    }
-
-    ['mousedown', 'touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
-    ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
+    initLocalMedia();
 
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) ws.send(JSON.stringify({ type: 'signal', candidate }));
@@ -213,10 +183,7 @@
       }
     };
 
-    ws.onopen = () => {
-      statusEl.textContent = 'Conectado, esperando oferta...';
-    };
-
+    ws.onopen = () => { statusEl.textContent = 'Conectado, esperando oferta...'; };
     ws.onmessage = async ({ data }) => {
       const msg = JSON.parse(typeof data === 'string' ? data : await data.text());
       switch (msg.type) {
@@ -232,8 +199,8 @@
           break;
         case 'signal':
           if (msg.offer) {
-            await initLocalVideo();
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+            if (!localStream) await initLocalMedia();
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             ws.send(JSON.stringify({ type: 'signal', answer: pc.localDescription }));
@@ -245,10 +212,10 @@
           break;
       }
     };
-
     ws.onerror = () => { statusEl.textContent = 'Error en la conexión.'; };
     ws.onclose = () => { statusEl.textContent = 'Conexión cerrada.'; };
 
+    const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
     function appendChat(user, text) {
       const msgEl = document.createElement('div');
       msgEl.innerHTML = `<small>[${new Date().toLocaleTimeString()}]</small> <strong>${user}:</strong> ${text}`;
@@ -256,7 +223,6 @@
       chatLog.appendChild(msgEl);
       chatLog.scrollTop = chatLog.scrollHeight;
     }
-
     function sendChat() {
       const t = chatInput.value.trim();
       if (t && ws.readyState === WebSocket.OPEN) {
@@ -264,7 +230,6 @@
         chatInput.value = '';
       }
     }
-
     sendChatBtn.addEventListener('click', sendChat);
     chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
@@ -272,24 +237,16 @@
       statusEl.textContent = 'Buscando dispositivos MIDI…';
       navigator.requestMIDIAccess().then(ma => {
         const outputs = Array.from(ma.outputs.values());
-        if (!outputs.length) {
-          statusEl.textContent = 'No hay dispositivos MIDI.';
-          return;
-        }
+        if (!outputs.length) { statusEl.textContent = 'No hay dispositivos MIDI.'; return; }
         midiSelectContainer.innerHTML = '';
         const sel = document.createElement('select');
         sel.innerHTML = '<option value="">-- Elige salida MIDI --</option>';
         outputs.forEach(o => sel.innerHTML += `<option value="${o.id}">${o.name}</option>`);
-        sel.onchange = () => {
-          output = ma.outputs.get(sel.value);
-          statusEl.textContent = `Salida MIDI: ${output.name}`;
-        };
+        sel.onchange = () => { output = ma.outputs.get(sel.value); statusEl.textContent = `Salida MIDI: ${output.name}`; };
         sel.value = outputs[0].id;
         sel.dispatchEvent(new Event('change'));
         midiSelectContainer.appendChild(sel);
-      }).catch(() => {
-        statusEl.textContent = 'No se pudo acceder a MIDI.';
-      });
+      }).catch(() => { statusEl.textContent = 'No se pudo acceder a MIDI.'; });
     }
 
     async function modoVirtual() {
@@ -315,19 +272,12 @@
     function handleMidiMessage(msg) {
       const [st, note, vel] = msg.data;
       const cmd = st & 0xf0;
-      if (cmd === 0x90 && vel > 0) {
-        const dot = document.createElement('div');
-        dot.classList.add('ripple');
-        document.body.appendChild(dot);
-        setTimeout(() => dot.remove(), 800);
-      }
       if (output) output.send(new Uint8Array(msg.data));
       if (synth) {
         const freq = Tone.Frequency(note, 'midi').toFrequency();
         if (cmd === 0x90 && vel > 0) {
           const velNorm = vel / 127;
-          const velScaled = Math.pow(velNorm, 2);
-          synth.triggerAttack(freq, Tone.now(), velScaled);
+          synth.triggerAttack(freq, Tone.now(), velNorm * velNorm);
           notasActivas.add(freq);
           notasSostenidas.delete(freq);
         } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
@@ -352,6 +302,20 @@
         }
       }
     }
+
+    // Botón de hablar tipo walkie-talkie
+    function pressTalk() {
+      pressingTalk = true;
+      ws.send(JSON.stringify({ type: 'talk', speaking: true }));
+      updateMicState();
+    }
+    function releaseTalk() {
+      pressingTalk = false;
+      ws.send(JSON.stringify({ type: 'talk', speaking: false }));
+      updateMicState();
+    }
+    ['mousedown', 'touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
+    ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
   </script>
 </body>
 </html>
