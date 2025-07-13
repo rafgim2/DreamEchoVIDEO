@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>DreamEcho - Oyente (Vídeo + MIDI)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: sans-serif;
+      background-color: #f5f5f5;
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .container {
+      max-width: 600px;
+      width: 90%;
+      padding: 2em;
+      background: white;
+      border-radius: 1em;
+      border: 3px solid orange;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 0.2em;
+    }
+    #remoteVideo {
+      width: 320px;
+      height: 240px;
+      background-color: #000;
+      margin-bottom: 1em;
+    }
+    #status, #oyentes {
+      font-size: 1.2em;
+      margin: 0.5em 0;
+    }
+    #chatLog {
+      height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 0.5em;
+      margin-bottom: 0.5em;
+      background: #fafafa;
+      text-align: left;
+    }
+    #chatInput {
+      width: 70%;
+      padding: 0.5em;
+      font-size: 1em;
+    }
+    #sendChatBtn {
+      padding: 0.6em 1em;
+      font-size: 1em;
+      cursor: pointer;
+      margin-left: 0.5em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>DreamEcho - Oyente (Vídeo + MIDI)</h1>
+    <video id="remoteVideo" autoplay playsinline></video>
+    <p id="status">Conectando...</p>
+    <p id="oyentes">Oyentes conectados: --</p>
+    <div id="chatLog"></div>
+    <input id="chatInput" placeholder="Escribe tu mensaje…">
+    <button id="sendChatBtn">🗨️ Enviar</button>
+  </div>
+
+  <script>
+    // Elementos del DOM
+    const statusEl   = document.getElementById('status');
+    const oyentesEl  = document.getElementById('oyentes');
+    const chatLog    = document.getElementById('chatLog');
+    const chatInput  = document.getElementById('chatInput');
+    const sendBtn    = document.getElementById('sendChatBtn');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    // Conexión WebSocket (señalización, estadísticas y chat)
+    const ws = new WebSocket('wss://dreamecho.onrender.com');
+    
+    // Configuración WebRTC
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+    let midiChannel;
+
+    // Synth de Tone.js para reproducir MIDI
+    const synth = new Tone.PolySynth(Tone.Synth).toDestination();
+
+    // ---- Logging y estado de la conexión ----
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', pc.iceConnectionState);
+      statusEl.innerText = `ICE: ${pc.iceConnectionState}`;
+    };
+    pc.onconnectionstatechange = () => {
+      console.log('PeerConnection state:', pc.connectionState);
+      statusEl.innerText = `Conexión: ${pc.connectionState}`;
+    };
+
+    // WebSocket handlers
+    ws.onopen = () => {
+      console.log('WebSocket abierto');
+      statusEl.innerText = 'Conectado. Esperando vídeo y MIDI.';
+    };
+    ws.onclose = () => {
+      console.log('WebSocket cerrado');
+      statusEl.innerText = 'Conexión cerrada.';
+    };
+    ws.onerror = e => {
+      console.error('WebSocket error:', e);
+      statusEl.innerText = 'Error en la conexión WebSocket.';
+    };
+    ws.onmessage = async event => {
+      const msg = JSON.parse(event.data);
+
+      // Señalización WebRTC
+      if (msg.type === 'signal') {
+        const { data } = msg;
+        if (data.sdp) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          console.log('SDP remoto aplicado:', data.sdp.type);
+          if (data.sdp.type === 'offer') {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            ws.send(JSON.stringify({ type: 'signal', data: { sdp: pc.localDescription } }));
+            console.log('Answer enviado');
+          }
+        } else if (data.candidate) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            console.log('Candidato ICE añadido');
+          } catch (e) {
+            console.error('Error añadiendo ICE candidate:', e);
+          }
+        }
+        return;
+      }
+
+      // Estadísticas de oyentes
+      if (msg.type === 'stats') {
+        oyentesEl.innerText = `Oyentes conectados: ${msg.clients}`;
+        console.log('Stats recibidas:', msg.clients);
+        return;
+      }
+
+      // Chat
+      if (msg.type === 'chat') {
+        const div = document.createElement('div');
+        div.innerHTML = `<strong>${msg.user}:</strong> ${msg.text}`;
+        chatLog.appendChild(div);
+        chatLog.scrollTop = chatLog.scrollHeight;
+        return;
+      }
+
+      // Fallback MIDI vía WebSocket
+      if (msg.type === 'midi') {
+        console.log('MIDI recibido (WebSocket):', msg.data);
+        statusEl.innerText = 'MIDI recibido (fallback)';
+        handleMIDI(msg.data);
+      }
+    };
+
+    // ICE candidates local
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) {
+        ws.send(JSON.stringify({ type: 'signal', data: { candidate } }));
+        console.log('Candidato ICE local enviado');
+      }
+    };
+
+    // Reproducción de la pista de vídeo cuando llegue
+    pc.ontrack = ev => {
+      console.log('Track recibido:', ev.streams);
+      remoteVideo.srcObject = ev.streams[0];
+      statusEl.innerText = 'Vídeo recibido';
+    };
+
+    // Recepción del canal de datos MIDI
+    pc.ondatachannel = ev => {
+      if (ev.channel.label === 'midiChannel') {
+        midiChannel = ev.channel;
+        midiChannel.onopen = () => {
+          console.log('MIDI DataChannel abierto (Oyente)');
+          statusEl.innerText = 'Canal MIDI abierto';
+        };
+        midiChannel.onmessage = e => {
+          const msg = JSON.parse(e.data);
+          console.log('MIDI recibido (WebRTC):', msg.data);
+          statusEl.innerText = 'MIDI recibido (WebRTC)';
+          handleMIDI(msg.data);
+        };
+      }
+    };
+
+    // Función para reproducir mensajes MIDI
+    function handleMIDI(data) {
+      const [status, note, velocity] = data;
+      const cmd = status & 0xf0;
+      const midiNote = Tone.Frequency(note, 'midi');
+      if (cmd === 0x90 && velocity > 0) {
+        synth.triggerAttack(midiNote);
+      } else if (cmd === 0x80 || (cmd === 0x90 && velocity === 0)) {
+        synth.triggerRelease(midiNote);
+      }
+    }
+
+    // Envío de mensajes de chat
+    sendBtn.addEventListener('click', () => {
+      const text = chatInput.value.trim();
+      if (!text) return;
+      ws.send(JSON.stringify({ type: 'chat', user: 'Oyente', text }));
+      chatInput.value = '';
+    });
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') sendBtn.click();
+    });
+  </script>
+</body>
+</html>
