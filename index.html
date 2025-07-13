@@ -7,67 +7,32 @@
   <!-- Tone.js para sonido virtual -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      font-family: sans-serif;
-      background-color: #f5f5f5;
-    }
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
+    html, body { height:100%; margin:0; font-family:sans-serif; background:#f5f5f5; }
+    body { display:flex; justify-content:center; align-items:center; }
     .container {
-      max-width: 600px;
-      width: 90%;
-      padding: 2em;
-      background: white;
-      border-radius: 1em;
-      border: 3px solid orange;
-      box-shadow: 0 0 20px rgba(0,0,0,0.1);
-      text-align: center;
+      max-width:600px; width:90%; padding:2em;
+      background:white; border-radius:1em;
+      border:3px solid orange; box-shadow:0 0 20px rgba(0,0,0,0.1);
+      text-align:center;
     }
-    h1 {
-      font-size: 2.5em;
-      margin-bottom: 0.2em;
-    }
+    h1 { font-size:2.5em; margin-bottom:0.2em; }
     #remoteVideo {
-      width: 320px;
-      height: 240px;
-      background-color: #000;
-      margin-bottom: 1em;
+      width:320px; height:240px;
+      background:#000; margin-bottom:1em;
     }
-    #status, #oyentes {
-      font-size: 1.2em;
-      margin: 0.5em 0;
-    }
-    #outputControls {
-      margin: 1em 0;
-    }
-    #midiOutputSelect {
-      margin-left: 0.5em;
-      padding: 0.3em;
-    }
+    #status, #oyentes { font-size:1.2em; margin:0.5em 0; }
+    #outputControls { margin:1em 0; }
+    #midiOutputSelect { display:none; margin-left:0.5em; padding:0.3em; }
     #chatLog {
-      height: 200px;
-      overflow-y: auto;
-      border: 1px solid #ccc;
-      padding: 0.5em;
-      margin-bottom: 0.5em;
-      background: #fafafa;
-      text-align: left;
+      height:200px; overflow-y:auto;
+      border:1px solid #ccc; padding:0.5em;
+      margin-bottom:0.5em; background:#fafafa;
+      text-align:left;
     }
-    #chatInput {
-      width: 70%;
-      padding: 0.5em;
-      font-size: 1em;
-    }
+    #chatInput { width:70%; padding:0.5em; font-size:1em; }
     #sendChatBtn {
-      padding: 0.6em 1em;
-      font-size: 1em;
-      cursor: pointer;
-      margin-left: 0.5em;
+      padding:0.6em 1em; font-size:1em;
+      cursor:pointer; margin-left:0.5em;
     }
   </style>
 </head>
@@ -78,7 +43,7 @@
     <p id="status">Conectando…</p>
     <p id="oyentes">Oyentes conectados: --</p>
 
-    <!-- Controles de salida MIDI/virtual -->
+    <!-- Salida MIDI / Virtual -->
     <div id="outputControls">
       <label>
         <input type="radio" name="output" value="virtual" checked>
@@ -88,7 +53,7 @@
         <input type="radio" name="output" value="midi">
         Piano Digital
       </label>
-      <select id="midiOutputSelect" style="display:none;">
+      <select id="midiOutputSelect">
         <option value="">Selecciona dispositivo MIDI</option>
       </select>
     </div>
@@ -99,78 +64,70 @@
   </div>
 
   <script>
-    // DOM
-    const statusEl       = document.getElementById('status');
-    const oyentesEl      = document.getElementById('oyentes');
-    const remoteVideo    = document.getElementById('remoteVideo');
-    const chatLog        = document.getElementById('chatLog');
-    const chatInput      = document.getElementById('chatInput');
-    const sendBtn        = document.getElementById('sendChatBtn');
-    const outputRadios   = document.querySelectorAll('input[name="output"]');
-    const midiOutputSelect = document.getElementById('midiOutputSelect');
+    // --- DOM ---
+    const statusEl        = document.getElementById('status');
+    const oyentesEl       = document.getElementById('oyentes');
+    const remoteVideo     = document.getElementById('remoteVideo');
+    const chatLog         = document.getElementById('chatLog');
+    const chatInput       = document.getElementById('chatInput');
+    const sendBtn         = document.getElementById('sendChatBtn');
+    const outputRadios    = document.querySelectorAll('input[name="output"]');
+    const midiOutputSelect= document.getElementById('midiOutputSelect');
 
-    // WebSocket (señalización, chat, stats)
+    // --- WebSocket para señalización, stats, chat y fallback MIDI ---
     const ws = new WebSocket('wss://dreamecho.onrender.com');
+    // aseguramos que textos grandes no vengan como Blob
+    ws.binaryType = 'arraybuffer';
 
-    // WebRTC
+    // --- WebRTC PeerConnection ---
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { // TURN de prueba
+          urls:  'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
     });
-    let midiChannel;
+    let midiChannel = null;
 
-    // Synth virtual con Tone.js
+    // --- Synth virtual Tone.js ---
     const synth = new Tone.PolySynth(Tone.Synth).toDestination();
 
-    // State MIDI
+    // Estado de MIDI hardware
     let midiAccess = null;
     let midiOutput = null;
 
-    //////////////////////////////
-    // 1) SETUP WEBRTC & SIGNAL //
-    //////////////////////////////
+    ////////////////////////////////
+    // 1) WebSocket → Peer signaling
+    ////////////////////////////////
 
-    // ICE candidates -> WS
-    pc.onicecandidate = ({ candidate }) => {
-      if (candidate) {
-        ws.send(JSON.stringify({ type:'signal', data:{ candidate }}));
-      }
-    };
-
-    // Recibir tracks de vídeo
-    pc.ontrack = ev => {
-      remoteVideo.srcObject = ev.streams[0];
-      statusEl.innerText = 'Vídeo recibido';
-    };
-
-    // Recibir DataChannel MIDI desde artista
-    pc.ondatachannel = ev => {
-      if (ev.channel.label === 'midiChannel') {
-        midiChannel = ev.channel;
-        midiChannel.onopen = () => {
-          console.log('MIDI DataChannel abierto');
-          statusEl.innerText = 'Canal MIDI abierto';
-        };
-        midiChannel.onmessage = e => {
-          const msg = JSON.parse(e.data);
-          playMIDI(msg.data);
-        };
-      }
-    };
-
-    // WebSocket handlers
-    ws.onopen = () => {
-      statusEl.innerText = 'Conectado. Esperando vídeo y MIDI.';
-    };
-    ws.onclose = () => {
-      statusEl.innerText = 'Conexión cerrada.';
-    };
-    ws.onerror = e => {
-      console.error(e);
-      statusEl.innerText = 'Error en WebSocket.';
-    };
+    // Al llegar mensajes WebSocket
     ws.onmessage = async event => {
-      const msg = JSON.parse(event.data);
+      let raw = event.data;
+      let msg;
 
+      // 1) si es arraybuffer (blob reconvertido), pasarlo a texto
+      if (raw instanceof ArrayBuffer) {
+        try {
+          raw = new TextDecoder().decode(raw);
+        } catch {
+          return; // no es JSON, puede ignorarse
+        }
+      }
+      // 2) si no es string, ignorar
+      if (typeof raw !== 'string') return;
+
+      // 3) parse JSON seguro
+      try {
+        msg = JSON.parse(raw);
+      } catch {
+        console.warn('Mensaje no JSON recibido por WS, se ignora.');
+        return;
+      }
+
+      // --- Señalización WebRTC ---
       if (msg.type === 'signal') {
         const { data } = msg;
         if (data.sdp) {
@@ -183,35 +140,68 @@
         } else if (data.candidate) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-          } catch (e) {
-            console.error('ICE error:', e);
-          }
+          } catch {}
         }
         return;
       }
 
+      // --- Estadísticas ---
       if (msg.type === 'stats') {
         oyentesEl.innerText = `Oyentes conectados: ${msg.clients}`;
         return;
       }
 
+      // --- Chat ---
       if (msg.type === 'chat') {
-        const div = document.createElement('div');
-        div.innerHTML = `<strong>${msg.user}:</strong> ${msg.text}`;
-        chatLog.appendChild(div);
+        const d = document.createElement('div');
+        d.innerHTML = `<strong>${msg.user}:</strong> ${msg.text}`;
+        chatLog.appendChild(d);
         chatLog.scrollTop = chatLog.scrollHeight;
         return;
       }
 
+      // --- Fallback MIDI por WS ---
       if (msg.type === 'midi') {
-        // Fallback si DataChannel no está abierto
         playMIDI(msg.data);
       }
     };
 
-    /////////////////////
-    // 2) CHAT CLIENTE //
-    /////////////////////
+    ws.onopen    = () => statusEl.innerText = 'Conectado. Esperando vídeo y MIDI.';
+    ws.onclose   = () => statusEl.innerText = 'Conexión WebSocket cerrada.';
+    ws.onerror   = () => statusEl.innerText = 'Error en WebSocket.';
+
+    // Enviar candidatos ICE al servidor
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) {
+        ws.send(JSON.stringify({ type:'signal', data:{ candidate }}));
+      }
+    };
+
+    //////////////////////////////////
+    // 2) Recepción de vídeo y MIDI
+    //////////////////////////////////
+
+    // Vídeo remoto
+    pc.ontrack = ev => {
+      remoteVideo.srcObject = ev.streams[0];
+      statusEl.innerText = 'Vídeo recibido';
+    };
+
+    // Canal MIDI WebRTC
+    pc.ondatachannel = ev => {
+      if (ev.channel.label === 'midiChannel') {
+        midiChannel = ev.channel;
+        midiChannel.onopen = () => statusEl.innerText = 'Canal MIDI abierto';
+        midiChannel.onmessage = e => {
+          const msg = JSON.parse(e.data);
+          playMIDI(msg.data);
+        };
+      }
+    };
+
+    //////////////////////////////////
+    // 3) Chat cliente
+    //////////////////////////////////
     sendBtn.addEventListener('click', () => {
       const text = chatInput.value.trim();
       if (!text) return;
@@ -222,59 +212,43 @@
       if (e.key === 'Enter') sendBtn.click();
     });
 
-    ///////////////////////////////////
-    // 3) WEB MIDI: salida a piano  //
-    ///////////////////////////////////
+    //////////////////////////////////
+    // 4) MIDI Hardware / Virtual
+    //////////////////////////////////
     navigator.requestMIDIAccess()
       .then(access => {
         midiAccess = access;
-        // Popular select de salidas
+        // rellenar salidas
         midiAccess.outputs.forEach((port) => {
           const opt = document.createElement('option');
           opt.value = port.id;
-          opt.text = port.name;
+          opt.text  = port.name;
           midiOutputSelect.appendChild(opt);
         });
       })
-      .catch(() => {
-        console.warn('No se pudo acceder a Web MIDI');
-      });
+      .catch(() => console.warn('No se pudo acceder a Web MIDI'));
 
-    // Mostrar/ocultar selector según output radio
-    outputRadios.forEach(radio => {
-      radio.addEventListener('change', () => {
-        if (radio.value === 'midi' && radio.checked) {
-          midiOutputSelect.style.display = '';
-        } else if (radio.checked) {
-          midiOutputSelect.style.display = 'none';
-        }
-      });
-    });
-    // Selección de puerto MIDI
+    // Mostrar u ocultar selector según opción elegida
+    outputRadios.forEach(r => r.addEventListener('change', () => {
+      midiOutputSelect.style.display = (r.value==='midi' && r.checked) ? '' : 'none';
+    }));
     midiOutputSelect.addEventListener('change', () => {
-      const id = midiOutputSelect.value;
-      midiOutput = midiAccess.outputs.get(id) || null;
+      midiOutput = midiAccess.outputs.get(midiOutputSelect.value) || null;
     });
 
-    //////////////////////////////////////
-    // 4) REPRODUCCIÓN DE MENSAJES MIDI //
-    //////////////////////////////////////
+    // Función que reproduce un mensaje MIDI
     function playMIDI(data) {
-      // data = [status, note, velocity]
       const [status, note, velocity] = data;
       const cmd = status & 0xf0;
-      // Si usa piano digital
-      const useMid = document.querySelector('input[name="output"]:checked').value === 'midi';
-      if (useMid && midiOutput) {
-        // Enviar paquete MIDI al dispositivo
+      const useHW = document.querySelector('input[name="output"]:checked').value === 'midi';
+      if (useHW && midiOutput) {
         midiOutput.send(data);
       } else {
-        // Sonido virtual con Tone.js
-        const m = Tone.Frequency(note, 'midi');
+        const freq = Tone.Frequency(note, 'midi');
         if (cmd === 0x90 && velocity > 0) {
-          synth.triggerAttack(m.toFrequency());
+          synth.triggerAttack(freq);
         } else {
-          synth.triggerRelease(m.toFrequency());
+          synth.triggerRelease(freq);
         }
       }
     }
