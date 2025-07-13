@@ -53,11 +53,13 @@
     let ws, pc, midiChannel;
     let audioTrack;
     let canTalk = false, midiActive = false;
+    let output = null, synth = null, pedal = false;
+    const notasActivas = new Set(), notasSostenidas = new Set();
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
 
-    // Setup WebSocket & PeerConnection
+    // Señalización y WebRTC
     ws = new WebSocket('wss://dreamecho.onrender.com');
-    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    pc = new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] });
 
     ws.onopen = () => { statusEl.textContent = 'Conectado'; initMedia(); };
     ws.onmessage = async ({ data }) => {
@@ -77,12 +79,12 @@
           break;
         case 'signal':
           if (msg.offer) {
-            pc.addTransceiver('video', { direction: 'recvonly' });
-            pc.addTransceiver('audio', { direction: 'recvonly' });
+            pc.addTransceiver('video',{ direction:'recvonly'});
+            pc.addTransceiver('audio',{ direction:'recvonly'});
             await pc.setRemoteDescription(msg.offer);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            ws.send(JSON.stringify({ type: 'signal', answer: pc.localDescription }));
+            ws.send(JSON.stringify({ type:'signal', answer:pc.localDescription }));
           } else if (msg.answer) {
             await pc.setRemoteDescription(msg.answer);
           } else if (msg.candidate) {
@@ -94,7 +96,7 @@
     ws.onerror = () => statusEl.textContent = 'Error WS';
     ws.onclose = () => statusEl.textContent = 'WS cerrado';
 
-    pc.onicecandidate = ({ candidate }) => { if (candidate) ws.send(JSON.stringify({ type: 'signal', candidate })); };
+    pc.onicecandidate = ({ candidate }) => { if (candidate) ws.send(JSON.stringify({ type:'signal', candidate })); };
     pc.ontrack = ev => { remoteVideo.srcObject = ev.streams[0]; };
     pc.ondatachannel = ev => {
       if (ev.channel.label === 'midi') {
@@ -104,13 +106,13 @@
     };
 
     async function initMedia() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
       localVideo.srcObject = stream;
       audioTrack = stream.getAudioTracks()[0];
       midiChannel = pc.createDataChannel('midi'); setupMidiChannel(midiChannel);
       const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
-      ws.send(JSON.stringify({ type: 'signal', offer: pc.localDescription }));
+      ws.send(JSON.stringify({ type:'signal', offer:pc.localDescription }));
       talkBtn.disabled = false;
     }
 
@@ -119,7 +121,7 @@
       if (!midiActive) {
         canTalk = true;
         audioTrack.enabled = true;
-        ws.send(JSON.stringify({ type: 'talk', user: username, talking: true }));
+        ws.send(JSON.stringify({ type:'talk', user:username, talking:true }));
         talkBtn.textContent = 'Hablando...';
       }
     };
@@ -127,26 +129,20 @@
       if (canTalk) {
         canTalk = false;
         audioTrack.enabled = false;
-        ws.send(JSON.stringify({ type: 'talk', user: username, talking: false }));
+        ws.send(JSON.stringify({ type:'talk', user:username, talking:false }));
         talkBtn.textContent = 'Hablar (mantener)';
       }
     };
 
     function handlePeerTalk(talking) {
-      if (talking) {
-        audioTrack.enabled = false;
-      } else if (!canTalk && !midiActive) {
-        audioTrack.enabled = true;
-      }
+      if (talking) audioTrack.enabled = false;
+      else if (!canTalk && !midiActive) audioTrack.enabled = true;
     }
 
     function handlePeerMidiActive() {
       midiActive = true;
       talkBtn.disabled = true;
-      setTimeout(() => {
-        midiActive = false;
-        talkBtn.disabled = false;
-      }, 300);
+      setTimeout(() => { midiActive = false; talkBtn.disabled = false; }, 300);
     }
 
     // Chat
@@ -160,7 +156,7 @@
     sendChatBtn.onclick = () => {
       const t = chatInput.value.trim();
       if (t && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'chat', user: username, text: t }));
+        ws.send(JSON.stringify({ type:'chat', user:username, text:t }));
         chatInput.value = '';
       }
     };
@@ -175,32 +171,75 @@
         midiSelectContainer.innerHTML = '';
         const sel = document.createElement('select'); sel.innerHTML = '<option>--Salida MIDI--</option>';
         Array.from(ma.outputs.values()).forEach(o => sel.innerHTML += `<option value="${o.id}">${o.name}</option>`);
-        sel.onchange = () => { /* no-op */ };
+        sel.onchange = () => { output = ma.outputs.get(sel.value); };
         sel.value = Array.from(ma.outputs.keys())[0]; sel.dispatchEvent(new Event('change'));
         midiSelectContainer.appendChild(sel);
         Array.from(ma.inputs.values()).forEach(inp => {
           inp.onmidimessage = evt => {
-            if (midiChannel && midiChannel.readyState === 'open') {
-              midiChannel.send(JSON.stringify({ data: Array.from(evt.data), time: performance.now() }));
-            }
-            ws.send(JSON.stringify({ type: 'midiActive' }));
+            if (midiChannel && midiChannel.readyState === 'open') midiChannel.send(JSON.stringify({ data:Array.from(evt.data), time:performance.now() }));
+            ws.send(JSON.stringify({ type:'midiActive' }));
           };
         });
       });
     }
 
-    // Virtual piano mode
+    // Virtual piano mode with full samples
     async function modoVirtual() {
+      statusEl.textContent = 'Cargando piano virtual...';
+      pedal = false; notasActivas.clear(); notasSostenidas.clear();
       await Tone.start();
-      synth = new Tone.Sampler({ urls: { A4: 'A4.mp3' }, baseUrl: 'https://tonejs.github.io/audio/salamander/' }).toDestination();
+      synth = new Tone.Sampler({
+        urls: {
+          A0:  'A0.mp3', C1:  'C1.mp3', 'D#1': 'Ds1.mp3', 'F#1': 'Fs1.mp3',
+          A1:  'A1.mp3', C2:  'C2.mp3', 'D#2': 'Ds2.mp3', 'F#2': 'Fs2.mp3',
+          A2:  'A2.mp3', C3:  'C3.mp3', 'D#3': 'Ds3.mp3', 'F#3': 'Fs3.mp3',
+          A3:  'A3.mp3', C4:  'C4.mp3', 'D#4': 'Ds4.mp3', 'F#4': 'Fs4.mp3',
+          A4:  'A4.mp3', C5:  'C5.mp3', 'D#5': 'Ds5.mp3', 'F#5': 'Fs5.mp3',
+          A5:  'A5.mp3', C6:  'C6.mp3', 'D#6': 'Ds6.mp3', 'F#6': 'Fs6.mp3',
+          A7:  'A7.mp3', C8:  'C8.mp3'
+        },
+        baseUrl: 'https://tonejs.github.io/audio/salamander/',
+        release: 0.4,
+        onload: () => { statusEl.textContent = 'Piano virtual listo.'; }
+      }).toDestination();
     }
 
     // Handle incoming MIDI
     function handleMidiMessage(msg) {
+      const [st, note, vel] = msg.data;
+      const cmd = st & 0xf0;
+      if (output) output.send(new Uint8Array(msg.data));
       if (synth) {
-        // playback omitted for brevity
+        const time = Tone.now();
+        const freq = Tone.Frequency(note, 'midi').toFrequency();
+        if (cmd === 0x90 && vel > 0) {
+          const velNorm = vel / 127;
+          const velScaled = Math.pow(velNorm, 2);
+          synth.triggerAttack(freq, time, velScaled);
+          notasActivas.add(freq);
+          notasSostenidas.delete(freq);
+        } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
+          if (pedal) {
+            notasActivas.delete(freq);
+            notasSostenidas.add(freq);
+          } else {
+            synth.triggerRelease(freq, time);
+            notasActivas.delete(freq);
+            notasSostenidas.delete(freq);
+          }
+        } else if (st === 176 && note === 64) {
+          pedal = vel >= 64;
+          if (!pedal) {
+            notasSostenidas.forEach(f => {
+              if (!notasActivas.has(f)) {
+                synth.triggerRelease(f, Tone.now());
+                notasSostenidas.delete(f);
+              }
+            });
+          }
+        }
       }
-      ws.send(JSON.stringify({ type: 'midiActive' }));
+      ws.send(JSON.stringify({ type:'midiActive' }));
     }
   </script>
 </body>
