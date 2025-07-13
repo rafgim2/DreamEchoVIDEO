@@ -16,6 +16,7 @@
       overflow-x: hidden;
       overflow-y: auto;
     }
+
     .marco {
       width: 90%;
       max-width: 700px;
@@ -26,6 +27,7 @@
       border-radius: 1em;
       box-sizing: border-box;
     }
+
     h1 { font-size: 2.5em; margin: 0.2em 0; }
     #recuentoOyentes, #status { font-size: 1.1em; color: #555; margin: 0.5em 0; }
     button { margin: 0.5em; font-size: 1em; padding: 0.8em 1.5em; cursor: pointer; }
@@ -37,12 +39,22 @@
       flex-wrap: wrap;
       margin: 1em 0;
     }
-    .video-container video {
+    .video-block {
       flex: 1 1 45%;
-      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .video-block video {
+      width: 100%;
       max-height: 250px;
       background: black;
       border-radius: 0.5em;
+    }
+    .video-label {
+      margin-top: 0.3em;
+      font-weight: bold;
+      color: #333;
     }
 
     #midiSelectContainer select {
@@ -85,10 +97,16 @@
     <h1>DreamEcho - Oyente</h1>
     <p><a href="https://www.youtube.com/@rafgim" target="_blank" rel="noopener">© By Rafael Gimeno</a></p>
 
-    <!-- Vídeos local y remoto -->
+    <!-- Vídeos local y remoto con etiquetas -->
     <div class="video-container">
-      <video id="localVideo" autoplay muted playsinline></video>
-      <video id="remoteVideo" autoplay playsinline></video>
+      <div class="video-block">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <p class="video-label">Tú</p>
+      </div>
+      <div class="video-block">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <p class="video-label">Artista</p>
+      </div>
     </div>
 
     <p id="recuentoOyentes">Oyentes conectados: --</p>
@@ -130,7 +148,6 @@
 
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
 
-    // Captura la cámara local y la añade al PC
     async function initLocalVideo() {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -174,7 +191,7 @@
           break;
         case 'signal':
           if (msg.offer) {
-            await initLocalVideo(); // asegúrate de que la cámara esté lista
+            await initLocalVideo();
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -265,9 +282,7 @@
         setTimeout(() => dot.remove(), 800);
       }
 
-      if (output) {
-        output.send(new Uint8Array(msg.data));
-      }
+      if (output) output.send(new Uint8Array(msg.data));
 
       if (synth) {
         const freq = Tone.Frequency(note, 'midi').toFrequency();
@@ -287,9 +302,8 @@
             notasSostenidas.delete(freq);
           }
         } else if (st === 176 && note === 64) {
-          const isDown = vel >= 64;
-          pedal = isDown;
-          if (!isDown) {
+          pedal = vel >= 64;
+          if (!pedal) {
             notasSostenidas.forEach(f => {
               if (!notasActivas.has(f)) {
                 synth.triggerRelease(f, Tone.now());
