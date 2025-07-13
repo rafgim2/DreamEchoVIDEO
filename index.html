@@ -46,7 +46,6 @@
   </div>
 
   <script>
-    // DOM elements
     const statusEl = document.getElementById('status');
     const oyentesEl = document.getElementById('recuentoOyentes');
     const remoteVideo = document.getElementById('remoteVideo');
@@ -55,7 +54,6 @@
     const sendChatBtn = document.getElementById('sendChatBtn');
     const midiSelectContainer = document.getElementById('midiSelectContainer');
 
-    // State variables
     let firstEventTime = null;
     let startPlaybackTime = null;
     let audioStartTime = null;
@@ -64,33 +62,20 @@
     let mode = null;
     let output = null;
     let synth = null;
-
-    // Virtual piano state
     let pedal = false;
     const notasActivas = new Set();
     const notasSostenidas = new Set();
 
-    // WebSocket and PeerConnection
     const ws = new WebSocket('wss://dreamecho.onrender.com');
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     let midiChannel = null;
 
-    // ICE connection state logging
-    pc.oniceconnectionstatechange = () => {
-      console.log('ICE estado:', pc.iceConnectionState);
-    };
-
-    // Send ICE candidates
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) ws.send(JSON.stringify({ type: 'signal', candidate }));
     };
-
-    // Display remote video
     pc.ontrack = ev => {
       remoteVideo.srcObject = ev.streams[0];
     };
-
-    // Receive MIDI channel
     pc.ondatachannel = ev => {
       if (ev.channel.label === 'midi') {
         midiChannel = ev.channel;
@@ -101,10 +86,7 @@
       }
     };
 
-    // WebSocket events
-    ws.onopen = () => {
-      statusEl.textContent = 'Conectado al servidor, esperando oferta...';
-    };
+    ws.onopen = () => { statusEl.textContent = 'Conectado al servidor, esperando oferta...'; };
     ws.onmessage = async ({ data }) => {
       const msg = JSON.parse(typeof data === 'string' ? data : await data.text());
       switch (msg.type) {
@@ -121,7 +103,6 @@
           break;
         case 'signal':
           if (msg.offer) {
-            // Receive only video
             pc.addTransceiver('video', { direction: 'recvonly' });
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
             const answer = await pc.createAnswer();
@@ -138,7 +119,6 @@
     ws.onerror = () => { statusEl.textContent = 'Error en la conexión.'; };
     ws.onclose = () => { statusEl.textContent = 'Conexión cerrada.'; };
 
-    // Chat setup
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
     function appendChat(user, text) {
       const msgEl = document.createElement('div');
@@ -147,8 +127,6 @@
       chatLog.appendChild(msgEl);
       chatLog.scrollTop = chatLog.scrollHeight;
     }
-    sendChatBtn.addEventListener('click', sendChat);
-    chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
     function sendChat() {
       const t = chatInput.value.trim();
       if (t && ws.readyState === WebSocket.OPEN) {
@@ -156,11 +134,13 @@
         chatInput.value = '';
       }
     }
+    sendChatBtn.addEventListener('click', sendChat);
+    chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
-    // Physical MIDI mode
     function modoMIDI() {
       mode = 'midi';
       statusEl.textContent = 'Buscando dispositivos MIDI…';
+      firstEventTime = null;
       navigator.requestMIDIAccess().then(ma => {
         const outputs = Array.from(ma.outputs.values());
         if (!outputs.length) {
@@ -170,36 +150,36 @@
         midiSelectContainer.innerHTML = '';
         const sel = document.createElement('select');
         sel.innerHTML = '<option value="">-- Elige salida MIDI --</option>';
-        outputs.forEach(o => sel.innerHTML += `<option value="${o.id}">${o.name}</option>`);
+        outputs.forEach(o => {
+          sel.innerHTML += `<option value="${o.id}">${o.name}</option>`;
+        });
         sel.onchange = () => {
           output = ma.outputs.get(sel.value);
           statusEl.textContent = `Salida MIDI: ${output.name}`;
         };
+        sel.value = outputs[0].id;
+        sel.dispatchEvent(new Event('change'));
         midiSelectContainer.appendChild(sel);
       }).catch(() => { statusEl.textContent = 'No se pudo acceder a MIDI.'; });
     }
 
-    // Virtual mode
     async function modoVirtual() {
       mode = 'virtual';
       statusEl.textContent = 'Cargando piano virtual…';
-      // Reset state
       firstEventTime = null;
       pedal = false;
       notasActivas.clear();
       notasSostenidas.clear();
       await Tone.start();
       synth = new Tone.Sampler({
-        urls: {
-          A0: "A0.mp3", C1: "C1.mp3", "D#1": "Ds1.mp3", "F#1": "Fs1.mp3",
-          A1: "A1.mp3", C2: "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3",
-          A2: "A2.mp3", C3: "C3.mp3", "D#3": "Ds3.mp3", "F#3": "Fs3.mp3",
-          A3: "A3.mp3", C4: "C4.mp3", "D#4": "Ds4.mp3", "F#4": "Fs4.mp3",
-          A4: "A4.mp3", C5: "C5.mp3", "D#5": "Ds5.mp3", "F#5": "Fs5.mp3",
-          A5: "A5.mp3", C6: "C6.mp3", "D#6": "Ds6.mp3", "F#6": "Fs6.mp3",
-          A7: "A7.mp3", C8: "C8.mp3"
-        },
-        baseUrl: "https://tonejs.github.io/audio/salamander/",
+        urls: { A0: 'A0.mp3', C1: 'C1.mp3', 'D#1': 'Ds1.mp3', 'F#1': 'Fs1.mp3',
+                A1: 'A1.mp3', C2: 'C2.mp3', 'D#2': 'Ds2.mp3', 'F#2': 'Fs2.mp3',
+                A2: 'A2.mp3', C3: 'C3.mp3', 'D#3': 'Ds3.mp3', 'F#3': 'Fs3.mp3',
+                A3: 'A3.mp3', C4: 'C4.mp3', 'D#4': 'Ds4.mp3', 'F#4': 'Fs4.mp3',
+                A4: 'A4.mp3', C5: 'C5.mp3', 'D#5': 'Ds5.mp3', 'F#5': 'Fs5.mp3',
+                A5: 'A5.mp3', C6: 'C6.mp3', 'D#6': 'Ds6.mp3', 'F#6': 'Fs6.mp3',
+                A7: 'A7.mp3', C8: 'C8.mp3' },
+        baseUrl: 'https://tonejs.github.io/audio/salamander/',
         release: 0.4,
         onload: () => {
           statusEl.textContent = `Modo virtual listo. Posición: ${queuePos} → latencia ≃ ${Math.round(queueLatency)} ms`;
@@ -207,12 +187,10 @@
       }).toDestination();
     }
 
-    // Handle incoming MIDI via DataChannel
     function handleMidiMessage(msg) {
       const [st, note, vel] = msg.data;
       const command = st & 0xf0;
       const eventTime = msg.time;
-
       if (firstEventTime === null) {
         firstEventTime = eventTime;
         startPlaybackTime = performance.now() + queueLatency;
@@ -227,15 +205,23 @@
         setTimeout(() => dot.remove(), 800);
       }
 
+      // Physical MIDI output
+      if (mode === 'midi' && output) {
+        const delay = Math.max(0, startPlaybackTime + relative - performance.now());
+        setTimeout(() => output.send(new Uint8Array(msg.data)), delay);
+      }
+
+      // Virtual piano
       if (mode === 'virtual' && synth) {
-        const freq = Tone.Frequency(note, 'midi').toFrequency();
         if (command === 0x90 && vel > 0) {
           const velNorm = vel / 127;
           const velScaled = Math.pow(velNorm, 2);
+          const freq = Tone.Frequency(note, 'midi').toFrequency();
           synth.triggerAttack(freq, timeSec, velScaled);
           notasActivas.add(freq);
           notasSostenidas.delete(freq);
         } else if (command === 0x80 || (command === 0x90 && vel === 0)) {
+          const freq = Tone.Frequency(note, 'midi').toFrequency();
           if (pedal) {
             notasActivas.delete(freq);
             notasSostenidas.add(freq);
@@ -246,9 +232,8 @@
           }
         } else if (st === 176 && note === 64) {
           const isDown = vel >= 64;
-          if (isDown) {
-            pedal = true;
-          } else {
+          if (isDown) pedal = true;
+          else {
             pedal = false;
             notasSostenidas.forEach(f => {
               if (!notasActivas.has(f)) {
