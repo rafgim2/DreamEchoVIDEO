@@ -6,36 +6,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 1em; text-align: center;
-           background-color: #c1f7f2; margin:0; min-height:100vh; }
-    .marco { width:90%; max-width:700px; margin:1em auto; padding:1em;
-             background:white; border:5px solid blue; border-radius:1em;
-             box-shadow:0 0 15px rgba(0,0,0,0.1); }
+    body { font-family: sans-serif; padding: 1em; text-align: center; background-color: #c1f7f2; margin:0; min-height:100vh; }
+    .marco { width:90%; max-width:700px; margin:1em auto; padding:1em; background:white; border:5px solid blue; border-radius:1em; box-shadow:0 0 15px rgba(0,0,0,0.1); }
     h1 { font-size:2.5em; margin:0.2em 0; }
     .video-box { display:flex; gap:1em; justify-content:center; margin-bottom:1em; }
     .video-wrap { flex:1; display:flex; flex-direction:column; align-items:center; }
     video { width:100%; max-height:240px; background:black; border-radius:0.5em; }
     .video-wrap span { font-size:0.9em; color:#555; margin-top:0.4em; }
-
-    #talkBtn {
-      background: blue; color: white; border:none; border-radius:0.5em;
-      font-size:1.1em; padding:0.6em 1.4em; margin:0.5em; cursor:pointer;
-      transition: background 0.2s;
-    }
+    #talkBtn { background: blue; color: white; border:none; border-radius:0.5em; font-size:1.1em; padding:0.6em 1.4em; margin:0.5em; cursor:pointer; transition: background 0.2s; }
     #talkBtn:active { background: #003f7f; }
     #talkStatus { margin:0.5em 0; color:#333; }
-
     button { margin:0.5em; font-size:1em; padding:0.6em 1.2em; cursor:pointer; }
     #midiSelectContainer select { margin-top:1em; padding:0.5em; font-size:1em; }
-    #chatLog { width:100%; height:150px; margin:1em 0 0.5em; padding:0.5em;
-               border:1px solid #ccc; overflow-y:auto; text-align:left;
-               background:#fafafa; border-radius:0.5em; }
+    #chatLog { width:100%; height:150px; margin:1em 0 0.5em; padding:0.5em; border:1px solid #ccc; overflow-y:auto; text-align:left; background:#fafafa; border-radius:0.5em; }
     #chatInput { width:70%; padding:0.5em; font-size:1em; }
     #sendChatBtn { padding:0.6em 1em; font-size:1em; margin-left:0.5em; cursor:pointer; }
-
     .chat-propio { color:blue; }
-    .ripple { position: fixed; border-radius:50%; transform:scale(0);
-               pointer-events:none; animation:rippleAnim 0.8s ease-out forwards; }
+    .ripple { position: fixed; border-radius:50%; transform:scale(0); pointer-events:none; animation:rippleAnim 0.8s ease-out forwards; }
     @keyframes rippleAnim { to { transform:scale(15); opacity:0; } }
   </style>
 </head>
@@ -74,7 +61,7 @@
   </div>
 
   <script>
-    // 1) Captura cámara y micrófono al cargar
+    // 1) Captura cámara y mic al cargar
     let localStream = null;
     (async () => {
       try {
@@ -86,179 +73,167 @@
       }
     })();
 
-    // 2) Variables globales
+    // 2) Globals
     let ws=null, pc=null, midiChannel=null, activeMIDIInput=null;
     let startTime=null, prevClients=0, remoteStream=null;
+    const statusEl = document.getElementById('status');
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente')||'Oyente';
-
-    // Walkie-talkie
     let localAudioTrack=null, isTalking=false, otherIsTalking=false;
+    let output=null, synth=null;
 
-    // 3) Inicializa WebSocket
-    function initWS() {
+    // 3) WebSocket
+    function initWS(){
       ws = new WebSocket('wss://dreamecho.onrender.com');
-      ws.onopen = () => { document.getElementById('status').textContent = 'Conectado, esperando oferta...'; };
-      ws.onmessage = async ({data}) => {
+      ws.onopen = ()=>{ statusEl.textContent='Conectado, esperando oferta...'; };
+      ws.onmessage = async ({data})=>{
         const msg = JSON.parse(typeof data==='string'?data:await data.text());
-        if (msg.type==='stats') {
+        if(msg.type==='stats'){
           document.getElementById('recuentoOyentes').textContent = `Oyentes conectados: ${msg.clients}`;
-          if (prevClients>0 && msg.clients>prevClients) startWebRTC();
+          if(prevClients>0 && msg.clients>prevClients) startWebRTC();
           prevClients = msg.clients;
         }
-        if (msg.type==='chat') appendChat(msg.user,msg.text);
-        if (msg.type==='signal') await handleSignal(msg);
+        if(msg.type==='chat') appendChat(msg.user,msg.text);
+        if(msg.type==='signal') await handleSignal(msg);
       };
-      ws.onerror = () => { document.getElementById('status').textContent='Error en WS.'; };
-      ws.onclose = () => { document.getElementById('status').textContent='WS cerrado.'; };
+      ws.onerror = ()=>{ statusEl.textContent='Error en WS.'; };
+      ws.onclose = ()=>{ statusEl.textContent='WS cerrado.'; };
     }
-    function sendSignal(data) {
-      if (ws && ws.readyState===WebSocket.OPEN) {
-        ws.send(JSON.stringify({type:'signal',...data}));
-      }
+    function sendSignal(d){
+      if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:'signal',...d}));
     }
 
-    // 4) Arranca/renegocia WebRTC
-    async function startWebRTC() {
-      if (pc) try{ pc.close(); }catch{}
-      pc = new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] });
+    // 4) WebRTC
+    async function startWebRTC(){
+      if(pc) try{ pc.close(); }catch{}
+      pc = new RTCPeerConnection({ iceServers:[{urls:'stun:stun.l.google.com:19302'}] });
 
-      // ICE candidates
-      pc.onicecandidate = e => { if (e.candidate) sendSignal({candidate:e.candidate}); };
-
-      // remoteStream
+      pc.onicecandidate = e=>{ if(e.candidate) sendSignal({candidate:e.candidate}); };
       remoteStream = new MediaStream();
       document.getElementById('remoteVideo').srcObject = remoteStream;
-      pc.ontrack = ev => {
-        if (!remoteStream.getTracks().find(t=>t.id===ev.track.id)) {
+      pc.ontrack = ev=>{
+        if(!remoteStream.getTracks().find(t=>t.id===ev.track.id)){
           remoteStream.addTrack(ev.track);
         }
       };
 
-      // DataChannel
-      pc.ondatachannel = ev => {
-        if (ev.channel.label==='midi') {
-          midiChannel = ev.channel;
-          midiChannel.onmessage = handleDCMessage;
+      pc.ondatachannel = ev=>{
+        if(ev.channel.label==='midi'){
+          midiChannel=ev.channel;
+          midiChannel.onmessage=handleDCMessage;
         }
       };
 
-      // Añade tracks locales
-      if (localStream) {
+      if(localStream){
         localAudioTrack = localStream.getAudioTracks()[0];
-        if (localAudioTrack) localAudioTrack.enabled = false;
-        localStream.getTracks().forEach(track => {
-          if (!pc.getSenders().find(s=>s.track&&s.track.id===track.id)) {
+        if(localAudioTrack) localAudioTrack.enabled = false;
+        localStream.getTracks().forEach(track=>{
+          if(!pc.getSenders().find(s=>s.track&&s.track.id===track.id)){
             pc.addTrack(track, localStream);
           }
         });
       }
 
-      // Crea canal midi si hace falta
-      if (!midiChannel || midiChannel.readyState==='closed') {
+      if(!midiChannel || midiChannel.readyState==='closed'){
         midiChannel = pc.createDataChannel('midi');
-        midiChannel.onmessage = handleDCMessage;
+        midiChannel.onmessage=handleDCMessage;
       }
 
-      // Negociación
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       sendSignal({offer:pc.localDescription});
     }
 
     // 5) Señalización
-    async function handleSignal(msg) {
-      if (msg.offer) {
+    async function handleSignal(msg){
+      if(msg.offer){
         await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-        const ans = await pc.createAnswer();
-        await pc.setLocalDescription(ans);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
         sendSignal({answer:pc.localDescription});
       }
-      if (msg.answer) await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-      if (msg.candidate) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+      if(msg.answer) await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+      if(msg.candidate) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
     }
 
     // 6) Chat
-    function appendChat(user,text) {
+    function appendChat(user,text){
       const log=document.getElementById('chatLog');
       const d=document.createElement('div');
       d.innerHTML=`<small>[${new Date().toLocaleTimeString()}]</small> <strong>${user}:</strong> ${text}`;
-      if (user===username) d.classList.add('chat-propio');
+      if(user===username) d.classList.add('chat-propio');
       log.appendChild(d); log.scrollTop=log.scrollHeight;
     }
-    document.getElementById('sendChatBtn').addEventListener('click',()=>{
+    document.getElementById('sendChatBtn').onclick=()=>{
       const inp=document.getElementById('chatInput'), txt=inp.value.trim();
-      if (txt&&ws.readyState===1) { ws.send(JSON.stringify({type:'chat',user:username,text:txt})); inp.value=''; }
-    });
+      if(txt && ws.readyState===WebSocket.OPEN){
+        ws.send(JSON.stringify({type:'chat',user:username,text:txt}));
+        inp.value='';
+      }
+    };
     document.getElementById('chatInput').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('sendChatBtn').click(); });
 
     // 7) Modo MIDI
-    document.getElementById('btnMIDI').addEventListener('click', modoMIDI);
-    function modoMIDI() {
-      document.getElementById('status').textContent='Buscando MIDI…';
+    document.getElementById('btnMIDI').onclick = modoMIDI;
+    function modoMIDI(){
+      statusEl.textContent='Buscando MIDI…';
       navigator.requestMIDIAccess().then(ma=>{
         const outs=Array.from(ma.outputs.values());
-        if (!outs.length) return document.getElementById('status').textContent='Sin MIDI.';
-        const cont=document.getElementById('midiSelectContainer');
-        cont.innerHTML='';
+        if(!outs.length) return statusEl.textContent='Sin dispositivos MIDI.';
+        const c=document.getElementById('midiSelectContainer');
+        c.innerHTML='';
         const sel=document.createElement('select');
         sel.innerHTML='<option value="">-- Elige salida MIDI --</option>';
         outs.forEach(o=> sel.innerHTML+=`<option value="${o.id}">${o.name}</option>`);
-        sel.onchange=()=>{ output=ma.outputs.get(sel.value); document.getElementById('status').textContent=`MIDI: ${output.name}`; };
+        sel.onchange=()=>{ output=ma.outputs.get(sel.value); statusEl.textContent=`MIDI: ${output.name}`; };
         sel.value=outs[0].id; sel.dispatchEvent(new Event('change'));
-        cont.appendChild(sel);
-      }).catch(()=>document.getElementById('status').textContent='Error acceso MIDI.');
+        c.appendChild(sel);
+      }).catch(()=>statusEl.textContent='Error acceso MIDI.');
     }
-    let output=null;
 
-    // 8) Modo virtual
-    document.getElementById('btnVirtual').addEventListener('click', modoVirtual);
-    let synth=null;
-    function modoVirtual() {
-      document.getElementById('status').textContent='Cargando piano virtual…';
+    // 8) Modo virtual (original)
+    document.getElementById('btnVirtual').onclick = modoVirtual;
+    function modoVirtual(){
+      statusEl.textContent = 'Cargando piano virtual…';
       Tone.start().then(()=>{
         synth = new Tone.Sampler({
           urls: {
-            A0:'A0.mp3', C1:'C1.mp3', 'D#1':'Ds1.mp3', 'F#1':'Fs1.mp3',
-            A1:'A1.mp3', C2:'C2.mp3', 'D#2':'Ds2.mp3', 'F#2':'Fs2.mp3',
-            A2:'A2.mp3', C3:'C3.mp3', 'D#3':'Ds3.mp3', 'F#3':'Fs3.mp3',
-            A3:'A3.mp3', C4:'C4.mp3', 'D#4':'Ds4.mp3', 'F#4':'Fs4.mp3',
-            A4:'A4.mp3', C5:'C5.mp3', 'D#5':'Ds5.mp3', 'F#5':'Fs5.mp3',
-            A5:'A5.mp3', C6:'C6.mp3', 'D#6':'Ds6.mp3', 'F#6':'Fs6.mp3',
-            A6:'A6.mp3', C7:'C7.mp3', 'D#7':'Ds7.mp3', 'F#7':'Fs7.mp3',
+            A0:'A0.mp3', C1:'C1.mp3','D#1':'Ds1.mp3','F#1':'Fs1.mp3',
+            A1:'A1.mp3', C2:'C2.mp3','D#2':'Ds2.mp3','F#2':'Fs2.mp3',
+            A2:'A2.mp3', C3:'C3.mp3','D#3':'Ds3.mp3','F#3':'Fs3.mp3',
+            A3:'A3.mp3', C4:'C4.mp3','D#4':'Ds4.mp3','F#4':'Fs4.mp3',
+            A4:'A4.mp3', C5:'C5.mp3','D#5':'Ds5.mp3','F#5':'Fs5.mp3',
+            A5:'A5.mp3', C6:'C6.mp3','D#6':'Ds6.mp3','F#6':'Fs6.mp3',
+            A6:'A6.mp3', C7:'C7.mp3','D#7':'Ds7.mp3','F#7':'Fs7.mp3',
             A7:'A7.mp3', C8:'C8.mp3'
           },
-          baseUrl:'https://tonejs.github.io/audio/salamander/', release:0.4
+          baseUrl:'https://tonejs.github.io/audio/salamander/',
+          release:0.4,
+          onload:()=>{ statusEl.textContent='Modo virtual listo.'; }
         }).toDestination();
-        synth.onload = () => {
-          document.getElementById('status').textContent='Modo virtual listo.';
-        };
       }).catch(e=>{
-        document.getElementById('status').textContent=`Error piano virtual: ${e.message}`;
+        statusEl.textContent='Error piano virtual';
         console.error(e);
       });
     }
 
-    // 9) Mensajes del canal de datos
-    function handleDCMessage(ev) {
-      try {
-        const msg = JSON.parse(ev.data);
-        if (msg.type==='walkie') {
+    // 9) Datos de canal: walkie + MIDI
+    function handleDCMessage(ev){
+      try{
+        const msg=JSON.parse(ev.data);
+        if(msg.type==='walkie'){
           otherIsTalking=msg.talking;
-          if (localAudioTrack) localAudioTrack.enabled = !otherIsTalking && isTalking;
+          if(localAudioTrack) localAudioTrack.enabled = !otherIsTalking && isTalking;
           updateTalkStatus();
         }
-        if (msg.type==='midi') playRemoteMidi(msg.data);
-      } catch {}
+        if(msg.type==='midi') playRemoteMidi(msg.data);
+      }catch{}
     }
-    function playRemoteMidi(data) {
-      const [st,n,vel] = data;
-      const cmd = st & 0xf0;
-      if (cmd===0x90 && vel>0 && synth) {
-        const freq = Tone.Frequency(n,'midi').toFrequency();
-        const velocity = (vel/127)**2;
-        // dispara nota de duración fija 0.5s
-        synth.triggerAttackRelease(freq, 0.5, Tone.now(), velocity);
-        // ripple visual
+    function playRemoteMidi(data){
+      const [st,n,vel]=data, cmd=st&0xf0;
+      if(cmd===0x90&&vel>0&&synth){
+        const freq=Tone.Frequency(n,'midi').toFrequency();
+        const v=(vel/127)**2;
+        synth.triggerAttackRelease(freq, '8n', Tone.now(), v);
         const dot=document.createElement('div'); dot.classList.add('ripple');
         document.body.appendChild(dot); setTimeout(()=>dot.remove(),800);
       }
@@ -266,35 +241,36 @@
 
     // 10) Walkie-talkie
     function updateTalkStatus(){
-      const s = document.getElementById('talkStatus');
-      if (isTalking) s.innerHTML='<b>Estás hablando</b> (mic activo)';
-      else if (otherIsTalking) s.innerHTML='<b>El Artista habla</b> (tu micro silenciado)';
+      const s=document.getElementById('talkStatus');
+      if(isTalking) s.innerHTML='<b>Estás hablando</b> (mic activo)';
+      else if(otherIsTalking) s.innerHTML='<b>El Artista habla</b> (tu micro silenciado)';
       else s.textContent='Walkie-talkie: Mantén pulsado para hablar';
     }
     function sendWalkie(t){
-      if (midiChannel && midiChannel.readyState==='open') {
+      if(midiChannel&&midiChannel.readyState==='open'){
         midiChannel.send(JSON.stringify({type:'walkie',talking:t}));
       }
     }
-    document.getElementById('talkBtn').addEventListener('mousedown',()=>{
+    const btn=document.getElementById('talkBtn');
+    btn.onmousedown = ()=>{
       isTalking=true;
-      if (localAudioTrack) localAudioTrack.enabled=true;
+      if(localAudioTrack) localAudioTrack.enabled=true;
       sendWalkie(true); updateTalkStatus();
-    });
-    document.getElementById('talkBtn').addEventListener('mouseup',()=>{
+    };
+    btn.onmouseup = ()=>{
       isTalking=false;
-      if (localAudioTrack) localAudioTrack.enabled=false;
+      if(localAudioTrack) localAudioTrack.enabled=false;
       sendWalkie(false); updateTalkStatus();
-    });
-    ['mouseleave','touchend','touchcancel'].forEach(e=>{
-      document.getElementById('talkBtn').addEventListener(e,()=>{
+    };
+    ['mouseleave','touchend','touchcancel'].forEach(ev=>
+      btn.addEventListener(ev,()=>{
         isTalking=false;
-        if (localAudioTrack) localAudioTrack.enabled=false;
+        if(localAudioTrack) localAudioTrack.enabled=false;
         sendWalkie(false); updateTalkStatus();
-      });
-    });
+      })
+    );
 
-    // 11) Inicializa todo
+    // 11) Init
     initWS();
     startWebRTC();
   </script>
