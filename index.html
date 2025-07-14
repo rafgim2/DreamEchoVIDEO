@@ -179,7 +179,10 @@
       setTimeout(()=>oscillator.stop(), 100);
       return dst.stream.getAudioTracks()[0];
     }
+
+    // ---- SOLO UNA VEZ: inicializa el micro y el vídeo y los añade al pc
     async function initLocalVideo() {
+      if (localStream) return; // ¡Evita duplicados!
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         realAudioTrack = localStream.getAudioTracks()[0];
@@ -196,7 +199,9 @@
         statusEl.textContent = '⚠️ No se pudo acceder a cámara/micro.';
       }
     }
+    // --- Se llama SOLO al cargar la página
     initLocalVideo();
+
     function updateMicState() {
       if (!audioSender) return;
       const activar = pressingTalk && !remoteSpeaking;
@@ -335,7 +340,7 @@
           remoteSpeaking = msg.speaking; updateMicState(); break;
         case 'signal':
           if (msg.offer) {
-            await initLocalVideo();
+            // NO vuelvas a llamar a initLocalVideo aquí
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
