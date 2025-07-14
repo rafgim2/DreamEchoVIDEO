@@ -157,19 +157,19 @@
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     let midiChannel = null;
     let localStream = null;
-    let audioTrack = null;
     let pressingTalk = false;
     let remoteSpeaking = false;
 
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
+
+    // --- WALKIE-TALKIE LOGIC ---
 
     async function initLocalVideo() {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-        audioTrack = localStream.getAudioTracks()[0];
-        audioTrack.enabled = false;
+        updateMicState(); // SIEMPRE forzamos mute por defecto al iniciar
       } catch (err) {
         console.error('No se pudo acceder a la cámara o micro:', err);
         statusEl.textContent = '⚠️ No se pudo acceder a cámara/micro.';
@@ -179,8 +179,12 @@
     initLocalVideo();
 
     function updateMicState() {
-      if (!audioTrack) return;
-      audioTrack.enabled = pressingTalk && !remoteSpeaking;
+      if (!localStream) return;
+      // Solo activo micro local si estoy pulsando Y el otro NO está hablando
+      const activar = pressingTalk && !remoteSpeaking;
+      localStream.getAudioTracks().forEach(track => {
+        track.enabled = activar;
+      });
     }
 
     function pressTalk() {
@@ -188,16 +192,16 @@
       ws.send(JSON.stringify({ type: 'talk', speaking: true }));
       updateMicState();
     }
-
     function releaseTalk() {
       pressingTalk = false;
       ws.send(JSON.stringify({ type: 'talk', speaking: false }));
       updateMicState();
     }
 
-    ['mousedown', 'touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
-    ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
+    ['mousedown','touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
 
+    // --- WEBRTC SIGNALING ---
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) ws.send(JSON.stringify({ type: 'signal', candidate }));
     };
@@ -227,6 +231,7 @@
           appendChat(msg.user, msg.text);
           break;
         case 'talk':
+          // El otro está hablando -> me silencio sí o sí, aunque yo esté pulsando
           remoteSpeaking = msg.speaking;
           updateMicState();
           break;
@@ -268,6 +273,7 @@
     sendChatBtn.addEventListener('click', sendChat);
     chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
+    // --- MIDI ---
     function modoMIDI() {
       statusEl.textContent = 'Buscando dispositivos MIDI…';
       navigator.requestMIDIAccess().then(ma => {
