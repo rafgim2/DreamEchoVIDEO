@@ -156,20 +156,44 @@
     const ws = new WebSocket('wss://dreamecho.onrender.com');
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     let midiChannel = null;
+
+    // --- WALKIE-TALKIE MUTING POR REPLACETRACK ---
     let localStream = null;
+    let realAudioTrack = null;
+    let silentAudioTrack = null;
+    let audioSender = null;
     let pressingTalk = false;
     let remoteSpeaking = false;
 
     const username = prompt('¿Cómo quieres que te vean en el chat?', 'Oyente') || 'Oyente';
 
-    // --- WALKIE-TALKIE LOGIC ---
+    // Genera un MediaStreamTrack de audio completamente silencioso
+    function createSilentAudioTrack() {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      oscillator.frequency.value = 0;
+      const dst = ctx.createMediaStreamDestination();
+      oscillator.connect(dst);
+      oscillator.start();
+      setTimeout(()=>oscillator.stop(), 100); // Param por seguridad
+      return dst.stream.getAudioTracks()[0];
+    }
 
     async function initLocalVideo() {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        realAudioTrack = localStream.getAudioTracks()[0];
+        silentAudioTrack = createSilentAudioTrack();
         localVideo.srcObject = localStream;
-        localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-        updateMicState(); // SIEMPRE forzamos mute por defecto al iniciar
+        // Añade ambos tracks, guarda el sender de audio
+        localStream.getTracks().forEach(t => {
+          let sender = pc.addTrack(t, localStream);
+          if (t.kind === 'audio') audioSender = sender;
+        });
+        // Por seguridad: empieza siempre muteado (pista silenciosa)
+        if(audioSender && audioSender.track !== silentAudioTrack) {
+          audioSender.replaceTrack(silentAudioTrack);
+        }
       } catch (err) {
         console.error('No se pudo acceder a la cámara o micro:', err);
         statusEl.textContent = '⚠️ No se pudo acceder a cámara/micro.';
@@ -179,12 +203,15 @@
     initLocalVideo();
 
     function updateMicState() {
-      if (!localStream) return;
-      // Solo activo micro local si estoy pulsando Y el otro NO está hablando
+      if (!audioSender) return;
       const activar = pressingTalk && !remoteSpeaking;
-      localStream.getAudioTracks().forEach(track => {
-        track.enabled = activar;
-      });
+      if (activar) {
+        if (audioSender.track !== realAudioTrack)
+          audioSender.replaceTrack(realAudioTrack);
+      } else {
+        if (audioSender.track !== silentAudioTrack)
+          audioSender.replaceTrack(silentAudioTrack);
+      }
     }
 
     function pressTalk() {
@@ -197,7 +224,6 @@
       ws.send(JSON.stringify({ type: 'talk', speaking: false }));
       updateMicState();
     }
-
     ['mousedown','touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
     ['mouseup','mouseleave','touchend','touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
 
@@ -231,7 +257,7 @@
           appendChat(msg.user, msg.text);
           break;
         case 'talk':
-          // El otro está hablando -> me silencio sí o sí, aunque yo esté pulsando
+          // El otro está hablando -> me silencio sí o sí
           remoteSpeaking = msg.speaking;
           updateMicState();
           break;
