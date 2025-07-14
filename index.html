@@ -280,9 +280,10 @@
       useVirtual = false;
       midiStatus.textContent = midiOutDevice ? `MIDI OUT: ${midiOutDevice.name}` : '(Conecta un piano digital)';
     };
-    virtualBtn.onclick = () => {
+    virtualBtn.onclick = async () => {
       useVirtual = true;
       midiStatus.textContent = 'Usando sonido virtual';
+      await setupSampler();
     };
 
     // ----------- Sonido virtual (Tone.js Sampler)
@@ -306,13 +307,13 @@
     }
 
     // ----------- Recibir MIDI del artista
-    function handleMidiMessage(msg, origen) {
+    async function handleMidiMessage(msg, origen) {
       const [st, note, vel] = msg.data;
       const cmd = st & 0xf0;
       if (!useVirtual && midiOutDevice) {
         midiOutDevice.send(new Uint8Array(msg.data));
       } else {
-        if (!synth) return;
+        if (!synth) await setupSampler();
         const freq = Tone.Frequency(note, 'midi').toFrequency();
         if (cmd === 0x90 && vel > 0) {
           const velNorm = vel / 127;
@@ -340,7 +341,6 @@
           remoteSpeaking = msg.speaking; updateMicState(); break;
         case 'signal':
           if (msg.offer) {
-            // NO vuelvas a llamar a initLocalVideo aquí
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -365,9 +365,8 @@
     pc.ontrack = ev => { remoteVideo.srcObject = ev.streams[0]; };
     pc.ondatachannel = ev => {
       if (ev.channel.label === 'midi') {
-        // Canal MIDI abierto por el artista
         midiChannel = ev.channel;
-        midiChannel.onmessage = ({data}) => handleMidiMessage(JSON.parse(data), 'artista');
+        midiChannel.onmessage = async ({data}) => await handleMidiMessage(JSON.parse(data), 'artista');
       }
     };
 
@@ -376,7 +375,7 @@
       if (!midiChannel || midiChannel.readyState === 'closed') {
         midiChannel = pc.createDataChannel('midi', {ordered:true});
         midiChannel.onopen = () => midiSendStatus.textContent += ' | Canal MIDI listo';
-        midiChannel.onmessage = ({data}) => handleMidiMessage(JSON.parse(data), 'artista');
+        midiChannel.onmessage = async ({data}) => await handleMidiMessage(JSON.parse(data), 'artista');
       }
     }
 
