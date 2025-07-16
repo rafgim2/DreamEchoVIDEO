@@ -118,7 +118,7 @@
       <!-- aquí va el teclado SVG -->
       <div id="keyboard"></div>
 
-      <!-- Botón de Simon y mensajería de estado -->
+      <!-- Botón de Simon y estado -->
       <div style="margin: 1em 0;">
         <button id="simonBtn" style="
           padding: .6em 1em; font-size: 1.1em;
@@ -177,8 +177,6 @@
     const midiInSelectCont  = document.getElementById('midiInSelectCont');
     const midiSendStatus    = document.getElementById('midiSendStatus');
     const keyboardEl        = document.getElementById('keyboard');
-    const simonBtn          = document.getElementById('simonBtn');
-    const simonStatus       = document.getElementById('simonStatus');
 
     let ws, pc, piano;
     let realAudioTrack, silentAudioTrack, audioSender;
@@ -186,11 +184,7 @@
     let midiAccess, midiInputs = [], midiOutputs = [], midiOutDevice, midiInDevice, midiChannel;
     let synth, useVirtual = true;
 
-    // Variables Simon
-    let simonSeq = [], turn = null, step = 0;
-    const myRole = 'profesor';
-
-    // ————— Funciones MIDI/Audio/Teclado —————
+    // --------------------- AUDIO & VIDEO ---------------------
     function createSilentAudioTrack() {
       const ctx = new (window.AudioContext||window.webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -238,17 +232,17 @@
     ['mouseup','mouseleave','touchend','touchcancel']
       .forEach(e=>talkBtn.addEventListener(e,releaseTalk));
 
+    // --------------------- WEBRTC & WEBSOCKET ---------------------
     function sendMessage(obj) {
       obj.pin = pin;
       ws.send(JSON.stringify(obj));
     }
 
-    // ————— WebRTC + WebSocket —————
     async function startWebRTC() {
       pc = new RTCPeerConnection({
         iceServers:[{ urls:'stun:stun.l.google.com:19302' }]
       });
-      // canal de datos MIDI (usado también para Simon)
+      // canal de datos MIDI
       midiChannel = pc.createDataChannel('midi',{ ordered:true });
       midiChannel.onmessage = ({ data }) =>
         handleMidiMessage(JSON.parse(data));
@@ -274,7 +268,70 @@
       };
     }
 
-    // ————— Configurar MIDI local —————
+    pinBtn.onclick = ()=>{
+      const v = pinInput.value.trim();
+      if (!v) return;
+      pin = v;
+      pinSection.style.display = 'none';
+      mainContent.style.display = 'block';
+
+      // inicializar piano SVG de 88 teclas
+      piano = new PianoKeys.Keyboard(keyboardEl,{
+        width:  keyboardEl.clientWidth,
+        height: keyboardEl.clientHeight,
+        keyColour: '#fff',
+        accidentalKeyColour: '#000',
+        activeColour: '#4a4'
+      });
+
+      // iniciar WebSocket/WebRTC
+      ws = new WebSocket('wss://dreamecho.onrender.com');
+      ws.onopen = ()=>{
+        statusEl.textContent='Conectado, esperando oferta…';
+        sendMessage({type:'ping'});
+        setupMIDI();
+        setupSampler();
+        startWebRTC();
+      };
+      ws.onmessage = async ({data})=>{
+        const msg = JSON.parse(
+          typeof data==='string'?data:await data.text()
+        );
+        switch(msg.type){
+          case 'stats':
+            oyentesEl.textContent=
+              `Oyentes conectados: ${msg.clients}`;
+            break;
+          case 'talk':
+            remoteSpeaking = msg.speaking;
+            updateMicState();
+            break;
+          case 'signal':
+            if(msg.pin!==pin) return;
+            if(msg.offer){
+              await pc.setRemoteDescription(
+                new RTCSessionDescription(msg.offer)
+              );
+              const ans = await pc.createAnswer();
+              await pc.setLocalDescription(ans);
+              sendMessage({type:'signal',answer:pc.localDescription});
+            } else if(msg.answer){
+              await pc.setRemoteDescription(
+                new RTCSessionDescription(msg.answer)
+              );
+            } else if(msg.candidate){
+              await pc.addIceCandidate(
+                new RTCIceCandidate(msg.candidate)
+              );
+            }
+            break;
+        }
+      };
+      ws.onerror = ()=>{ statusEl.textContent='Error en la conexión.'; };
+      ws.onclose = ()=>{ statusEl.textContent='Conexión cerrada.'; };
+    };
+
+    // --------------------- MIDI & SYNTH ---------------------
     async function setupMIDI() {
       midiAccess  = await navigator.requestMIDIAccess();
       midiInputs  = Array.from(midiAccess.inputs.values());
@@ -287,7 +344,7 @@
         sel.innerHTML = '<option value="">-- Elige tu teclado digital --</option>';
         midiOutputs.forEach((o,i)=>
           sel.innerHTML += `<option value="${i}">${o.name}</option>`);
-        sel.onchange = ()=>{
+        sel.onchange = ()=> {
           midiOutDevice = sel.value
             ? midiOutputs[+sel.value] : null;
           midiStatus.textContent = midiOutDevice
@@ -301,14 +358,14 @@
           '(No hay salidas MIDI físicas conectadas)';
       }
 
-      // ENTRADAS MIDI (del alumno al profe)
+      // ENTRADAS MIDI (del alumno al profesor)
       midiInSelectCont.innerHTML = '';
       if (midiInputs.length) {
         const selIn = document.createElement('select');
         selIn.innerHTML = '<option value="">-- Elige entrada MIDI --</option>';
         midiInputs.forEach((i,k)=>
           selIn.innerHTML += `<option value="${k}">${i.name}</option>`);
-        selIn.onchange = ()=>{
+        selIn.onchange = ()=> {
           if (midiInDevice) midiInDevice.onmidimessage = null;
           midiInDevice = selIn.value
             ? midiInputs[+selIn.value] : null;
@@ -334,7 +391,6 @@
       }
     }
 
-    // ————— Sampler virtual —————
     async function setupSampler() {
       if (synth) return;
       await Tone.start();
@@ -354,57 +410,67 @@
       }).toDestination();
     }
 
-    // ————— Manejo de mensajes MIDI y Simon —————
     function handleMidiMessage(msg) {
-      // flujo normal MIDI
-      if (msg.data) {
-        const [st,note,vel] = msg.data;
-        const cmd = st & 0xf0;
-        const noteName = Tone.Frequency(note,'midi').toNote();
-        if (cmd === 0x90 && vel>0) piano.fillKey(noteName);
-        else piano.clearKey(noteName);
-        if (!useVirtual && midiOutDevice) {
-          midiOutDevice.send(new Uint8Array(msg.data));
-        } else {
-          if (!synth) return;
-          const freq = Tone.Frequency(note,'midi').toFrequency();
-          if (cmd===0x90 && vel>0) synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
-          else synth.triggerRelease(freq,Tone.now());
-        }
-        return;
+      const [st,note,vel] = msg.data;
+      const cmd = st & 0xf0;
+      const noteName = Tone.Frequency(note,'midi').toNote();
+
+      // iluminar/apagar tecla SVG del alumno
+      if (cmd === 0x90 && vel>0) {
+        piano.fillKey(noteName);
+      } else if (cmd===0x80|| (cmd===0x90&&vel===0)) {
+        piano.clearKey(noteName);
       }
-      // flujo Simon
-      if (msg.type === 'simon') {
-        if (!msg.player) {
-          // reproducción de secuencia en remoto
-          piano.fillKey(msg.note);
-          setTimeout(()=> piano.clearKey(msg.note), 500);
+
+      // reproducir sonido local
+      if (!useVirtual && midiOutDevice) {
+        midiOutDevice.send(new Uint8Array(msg.data));
+      } else {
+        if (!synth) return;
+        const freq = Tone.Frequency(note,'midi').toFrequency();
+        if (cmd===0x90 && vel>0) {
+          synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
+        } else {
+          synth.triggerRelease(freq,Tone.now());
         }
-        // las jugadas de player-validación se hacen localmente
       }
     }
 
-    // ————— Funciones Simon —————
+    // --------------------- Simon Game ---------------------
+    const simonBtn    = document.getElementById('simonBtn');
+    const simonStatus = document.getElementById('simonStatus');
+    const myRole      = 'profesor';
+
+    let simonSeq = [], turn = null, step = 0;
+
     function disableKeys() { piano.disable(); }
     function enableKeys()  { piano.enable(); }
 
+    function startSimon() {
+      simonSeq = [];
+      turn     = 'profesor';
+      step     = 0;
+      simonStatus.textContent = 'Turno del PROFESOR → Generando nota…';
+      nextStep();
+    }
+
     function pickRandomNote() {
-      const all = piano.getKeys(); 
+      const all = piano.getKeys();
       return all[Math.floor(Math.random()*all.length)];
     }
 
     function playSequence(done) {
       disableKeys();
-      let i=0;
-      const iv = setInterval(()=>{
+      let i = 0;
+      const iv = setInterval(() => {
         const note = simonSeq[i];
         midiChannel.send(JSON.stringify({ type:'simon', note }));
         piano.fillKey(note);
-        setTimeout(()=> piano.clearKey(note),500);
+        setTimeout(() => piano.clearKey(note), 500);
         i++;
-        if (i>=simonSeq.length) {
+        if (i >= simonSeq.length) {
           clearInterval(iv);
-          setTimeout(done,300);
+          setTimeout(done, 300);
         }
       }, 800);
     }
@@ -412,28 +478,24 @@
     function nextStep() {
       const note = pickRandomNote();
       simonSeq.push(note);
-      playSequence(()=>{
-        turn = (turn==='profesor') ? 'alumno' : 'profesor';
+      playSequence(() => {
+        turn = (turn === 'profesor') ? 'alumno' : 'profesor';
         step = 0;
         simonStatus.textContent = `Turno de ${turn.toUpperCase()}: repite ${simonSeq.length} notas`;
-        if (turn==='alumno') enableKeys();
+        if (turn === myRole) enableKeys();
         else disableKeys();
       });
-    }
-
-    function startSimon() {
-      simonSeq = [];
-      turn = 'profesor';
-      step = 0;
-      simonStatus.textContent = 'Turno del PROFESOR → Generando nota…';
-      nextStep();
     }
 
     piano.on('noteon', noteName => {
       if (turn !== myRole) return;
       midiChannel.send(JSON.stringify({ type:'simon', note: noteName, player:true }));
-      if (noteName !== simonSeq[step]) {
-        const winner = (turn==='profesor') ? 'ALUMNO' : 'PROFESOR';
+      checkStep(noteName);
+    });
+
+    function checkStep(note) {
+      if (note !== simonSeq[step]) {
+        const winner = (turn === 'profesor') ? 'ALUMNO' : 'PROFESOR';
         simonStatus.innerHTML =
           `<span style="color:green">${winner} GANADOR</span> — <span style="color:red">${myRole.toUpperCase()} PIERDE</span>`;
         disableKeys();
@@ -443,62 +505,18 @@
       if (step >= simonSeq.length) {
         nextStep();
       }
+    }
+
+    midiChannel.addEventListener('message', ev => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type !== 'simon') return;
+      if (!msg.player) {
+        piano.fillKey(msg.note);
+        setTimeout(() => piano.clearKey(msg.note), 500);
+      }
     });
 
     simonBtn.addEventListener('click', startSimon);
-
-    // ————— Evento Principal Pin + Arranque —————
-    pinBtn.onclick = ()=>{
-      const v = pinInput.value.trim();
-      if (!v) return;
-      pin = v;
-      pinSection.style.display = 'none';
-      mainContent.style.display = 'block';
-
-      piano = new PianoKeys.Keyboard(keyboardEl,{
-        width:  keyboardEl.clientWidth,
-        height: keyboardEl.clientHeight,
-        keyColour: '#fff',
-        accidentalKeyColour: '#000',
-        activeColour: '#4a4'
-      });
-
-      ws = new WebSocket('wss://dreamecho.onrender.com');
-      ws.onopen = ()=>{
-        statusEl.textContent='Conectado, esperando oferta…';
-        sendMessage({type:'ping'});
-        setupMIDI();
-        setupSampler();
-        startWebRTC();
-      };
-      ws.onmessage = async ({data})=>{
-        const msg = JSON.parse(typeof data==='string'?data:await data.text());
-        switch(msg.type){
-          case 'stats':
-            oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
-            break;
-          case 'talk':
-            remoteSpeaking = msg.speaking;
-            updateMicState();
-            break;
-          case 'signal':
-            if(msg.pin!==pin) return;
-            if(msg.offer){
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-              const ans = await pc.createAnswer();
-              await pc.setLocalDescription(ans);
-              sendMessage({type:'signal',answer:pc.localDescription});
-            } else if(msg.answer){
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-            } else if(msg.candidate){
-              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            }
-            break;
-        }
-      };
-      ws.onerror = ()=>{ statusEl.textContent='Error en la conexión.'; };
-      ws.onclose = ()=>{ statusEl.textContent='Conexión cerrada.'; };
-    };
   </script>
 </body>
 </html>
