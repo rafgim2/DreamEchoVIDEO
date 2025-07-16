@@ -67,57 +67,61 @@
     </div>
   </div>
   <script>
-    let pin = null;
-    let ws = null;
-    let pc = null;
-    let localStream = null;
-    let realAudioTrack = null;
-    let silentAudioTrack = null;
-    let audioSender = null;
-    let pressingTalk = false;
-    let remoteSpeaking = false;
-    let midiAccess = null;
-    let midiInputs = [];
-    let midiOutputs = [];
-    let midiOutDevice = null;
-    let midiInDevice = null;
-    let midiChannel = null;
-    let synth = null;
-    let useVirtual = true;
+    let pin, ws, pc;
+    let localStream, realAudioTrack, silentAudioTrack, audioSender;
+    let pressingTalk = false, remoteSpeaking = false;
+    let midiAccess, midiInputs = [], midiOutputs = [], midiOutDevice, midiInDevice, midiChannel;
+    let synth, useVirtual = true;
 
-    const pinSection = document.getElementById('pinSection');
-    const pinInput   = document.getElementById('pinInput');
-    const joinRoomBtn= document.getElementById('joinRoomBtn');
-    const appContent = document.getElementById('appContent');
-    const statusEl   = document.getElementById('status');
-    const oyentesEl  = document.getElementById('recuentoOyentes');
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo= document.getElementById('remoteVideo');
-    const talkBtn    = document.getElementById('talkBtn');
-    const virtualBtn = document.getElementById('virtualBtn');
-    const midiOutSelectCont = document.getElementById('midiOutSelectCont');
-    const midiStatus = document.getElementById('midiStatus');
-    const midiInSelectCont  = document.getElementById('midiInSelectCont');
-    const midiSendStatus    = document.getElementById('midiSendStatus');
+    const pinSection      = document.getElementById('pinSection');
+    const pinInput        = document.getElementById('pinInput');
+    const joinRoomBtn     = document.getElementById('joinRoomBtn');
+    const appContent      = document.getElementById('appContent');
+    const statusEl        = document.getElementById('status');
+    const oyentesEl       = document.getElementById('recuentoOyentes');
+    const localVideo      = document.getElementById('localVideo');
+    const remoteVideo     = document.getElementById('remoteVideo');
+    const talkBtn         = document.getElementById('talkBtn');
+    const virtualBtn      = document.getElementById('virtualBtn');
+    const midiOutSelectCont  = document.getElementById('midiOutSelectCont');
+    const midiStatus      = document.getElementById('midiStatus');
+    const midiInSelectCont   = document.getElementById('midiInSelectCont');
+    const midiSendStatus  = document.getElementById('midiSendStatus');
 
-    joinRoomBtn.onclick = () => {
+    joinRoomBtn.onclick = async () => {
       const val = pinInput.value.trim();
       if (!val) { alert('Introduce un PIN válido.'); return; }
       pin = val;
       pinSection.style.display = 'none';
       appContent.style.display = 'block';
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        realAudioTrack = localStream.getAudioTracks()[0];
+        silentAudioTrack = createSilentAudioTrack();
+        localVideo.srcObject = localStream;
+      } catch {
+        statusEl.textContent = 'No se pudo acceder a cámara/micro.';
+        return;
+      }
       initConnection();
+      setupMIDI();
+      setupSampler();
     };
 
     function initConnection() {
-      ws = new WebSocket('wss://dreamecho.onrender.com');
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}`);
       pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+      localStream.getTracks().forEach(track => {
+        const sender = pc.addTrack(track, localStream);
+        if (track.kind === 'audio') audioSender = sender;
+      });
+      if (audioSender) audioSender.replaceTrack(silentAudioTrack);
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: 'join', role: 'alumno', pin }));
         statusEl.textContent = 'Conectado, esperando oferta…';
-        setupMIDI();
-        setupSampler();
       };
 
       ws.onmessage = async ({ data }) => {
@@ -158,20 +162,6 @@
       };
     }
 
-    async function initLocal() {
-      if (localStream) return;
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      realAudioTrack = localStream.getAudioTracks()[0];
-      silentAudioTrack = createSilentAudioTrack();
-      localVideo.srcObject = localStream;
-      localStream.getTracks().forEach(t => {
-        const sender = pc.addTrack(t, localStream);
-        if (t.kind === 'audio') audioSender = sender;
-      });
-      if (audioSender && audioSender.track !== silentAudioTrack) audioSender.replaceTrack(silentAudioTrack);
-    }
-    initLocal();
-
     function createSilentAudioTrack() {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -186,27 +176,21 @@
     function updateMicState() {
       if (!audioSender) return;
       const active = pressingTalk && !remoteSpeaking;
-      if (active) {
-        if (audioSender.track !== realAudioTrack) audioSender.replaceTrack(realAudioTrack);
-      } else {
-        if (audioSender.track !== silentAudioTrack) audioSender.replaceTrack(silentAudioTrack);
-      }
+      audioSender.replaceTrack(active ? realAudioTrack : silentAudioTrack);
     }
 
-    function pressTalk() {
+    ['mousedown','touchstart'].forEach(e => talkBtn.addEventListener(e, () => {
       pressingTalk = true;
       ws.send(JSON.stringify({ type: 'talk', speaking: true }));
       talkBtn.style.background = 'red';
       updateMicState();
-    }
-    function releaseTalk() {
+    }));
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(e => talkBtn.addEventListener(e, () => {
       pressingTalk = false;
       ws.send(JSON.stringify({ type: 'talk', speaking: false }));
       talkBtn.style.background = '';
       updateMicState();
-    }
-    ['mousedown','touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
-    ['mouseup','mouseleave','touchend','touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
+    }));
 
     async function setupMIDI() {
       midiAccess = await navigator.requestMIDIAccess();
@@ -223,7 +207,9 @@
           useVirtual = !midiOutDevice;
         };
         midiOutSelectCont.appendChild(sel);
-      } else midiOutSelectCont.textContent = '(No hay salidas MIDI físicas conectadas)';
+      } else {
+        midiOutSelectCont.textContent = '(No hay salidas MIDI físicas conectadas)';
+      }
       midiInSelectCont.innerHTML = '';
       if (midiInputs.length) {
         const selIn = document.createElement('select');
@@ -234,30 +220,52 @@
           midiInDevice = selIn.value ? midiInputs[+selIn.value] : null;
           if (midiInDevice) {
             midiInDevice.onmidimessage = ({ data }) => {
-              if (midiChannel && midiChannel.readyState === 'open')
-                midiChannel.send(JSON.stringify({ data: Array.from(data), from:'oyente' }));
+              if (midiChannel && midiChannel.readyState === 'open') {
+                midiChannel.send(JSON.stringify({ data: Array.from(data) }));
+              }
             };
             midiSendStatus.textContent = `Enviando MIDI desde: ${midiInDevice.name}`;
-          } else midiSendStatus.textContent = '';
+          } else {
+            midiSendStatus.textContent = '';
+          }
         };
         midiInSelectCont.appendChild(selIn);
-      } else midiInSelectCont.textContent = '(No hay entradas MIDI físicas conectadas)';
+      } else {
+        midiInSelectCont.textContent = '(No hay entradas MIDI físicas conectadas)';
+      }
     }
 
     async function setupSampler() {
       if (synth) return;
       await Tone.start();
-      synth = new Tone.Sampler({ urls: { A0:'A0.mp3',C1:'C1.mp3','D#1':'Ds1.mp3','F#1':'Fs1.mp3',A1:'A1.mp3',C2:'C2.mp3','D#2':'Ds2.mp3','F#2':'Fs2.mp3',A2:'A2.mp3',C3:'C3.mp3','D#3':'Ds3.mp3','F#3':'Fs3.mp3',A3:'A3.mp3',C4:'C4.mp3','D#4':'Ds4.mp3','F#4':'Fs4.mp3',A4:'A4.mp3',C5:'C5.mp3','D#5':'Ds5.mp3','F#5':'Fs5.mp3',A5:'A5.mp3',C6:'C6.mp3','D#6':'Ds6.mp3','F#6':'Fs6.mp3',A7:'A7.mp3',C8:'C8.mp3'}, baseUrl:'https://tonejs.github.io/audio/salamander/', release:0.4, onload:()=> midiStatus.textContent='Sonido virtual listo'}).toDestination();
+      synth = new Tone.Sampler({
+        urls: {
+          A0:'A0.mp3', C1:'C1.mp3', 'D#1':'Ds1.mp3', 'F#1':'Fs1.mp3',
+          A1:'A1.mp3', C2:'C2.mp3', 'D#2':'Ds2.mp3', 'F#2':'Fs2.mp3',
+          A2:'A2.mp3', C3:'C3.mp3', 'D#3':'Ds3.mp3', 'F#3':'Fs3.mp3',
+          A3:'A3.mp3', C4:'C4.mp3', 'D#4':'Ds4.mp3', 'F#4':'Fs4.mp3',
+          A4:'A4.mp3', C5:'C5.mp3','D#5':'Ds5.mp3','F#5':'Fs5.mp3',
+          A5:'A5.mp3', C6:'C6.mp3','D#6':'Ds6.mp3','F#6':'Fs6.mp3',
+          A7:'A7.mp3', C8:'C8.mp3'
+        },
+        baseUrl:'https://tonejs.github.io/audio/salamander/',
+        release:0.4,
+        onload:()=> midiStatus.textContent='Sonido virtual listo'
+      }).toDestination();
     }
 
     function handleMidiMessage(msg) {
       const [st,note,vel] = msg.data;
       const cmd = st & 0xf0;
-      if (!useVirtual && midiOutDevice) midiOutDevice.send(new Uint8Array(msg.data));
-      else if (synth) {
+      if (!useVirtual && midiOutDevice) {
+        midiOutDevice.send(new Uint8Array(msg.data));
+      } else if (synth) {
         const freq = Tone.Frequency(note,'midi').toFrequency();
-        if (cmd === 0x90 && vel > 0) synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
-        else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) synth.triggerRelease(freq,Tone.now());
+        if (cmd===0x90 && vel>0) {
+          synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
+        } else {
+          synth.triggerRelease(freq,Tone.now());
+        }
       }
     }
   </script>
