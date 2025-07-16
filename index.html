@@ -149,21 +149,21 @@
 
   <script>
     let pin = null;
-    const pinSection      = document.getElementById('pinSection');
-    const pinInput        = document.getElementById('pinInput');
-    const pinBtn          = document.getElementById('pinBtn');
-    const mainContent     = document.getElementById('mainContent');
-    const statusEl        = document.getElementById('status');
-    const oyentesEl       = document.getElementById('recuentoOyentes');
-    const localVideo      = document.getElementById('localVideo');
-    const remoteVideo     = document.getElementById('remoteVideo');
-    const talkBtn         = document.getElementById('talkBtn');
-    const virtualBtn      = document.getElementById('virtualBtn');
+    const pinSection        = document.getElementById('pinSection');
+    const pinInput          = document.getElementById('pinInput');
+    const pinBtn            = document.getElementById('pinBtn');
+    const mainContent       = document.getElementById('mainContent');
+    const statusEl          = document.getElementById('status');
+    const oyentesEl         = document.getElementById('recuentoOyentes');
+    const localVideo        = document.getElementById('localVideo');
+    const remoteVideo       = document.getElementById('remoteVideo');
+    const talkBtn           = document.getElementById('talkBtn');
+    const virtualBtn        = document.getElementById('virtualBtn');
     const midiOutSelectCont = document.getElementById('midiOutSelectCont');
-    const midiStatus      = document.getElementById('midiStatus');
+    const midiStatus        = document.getElementById('midiStatus');
     const midiInSelectCont  = document.getElementById('midiInSelectCont');
     const midiSendStatus    = document.getElementById('midiSendStatus');
-    const keyboardEl      = document.getElementById('keyboard');
+    const keyboardEl        = document.getElementById('keyboard');
 
     let ws, pc, piano;
     let realAudioTrack, silentAudioTrack, audioSender;
@@ -224,6 +224,11 @@
     }
 
     async function startWebRTC() {
+      // si ya existía una PC anterior, ciérrala primero
+      if (pc) {
+        pc.getSenders().forEach(s => s.track && s.track.stop());
+        pc.close();
+      }
       pc = new RTCPeerConnection({
         iceServers:[{ urls:'stun:stun.l.google.com:19302' }]
       });
@@ -373,7 +378,6 @@
         activeColour: '#4a4'
       });
 
-      // iniciar WebSocket y MIDI/Sampler
       ws = new WebSocket('wss://dreamecho.onrender.com');
       ws.onopen = ()=>{
         statusEl.textContent = 'Conectado, esperando al alumno…';
@@ -388,9 +392,10 @@
         switch(msg.type){
           case 'stats':
             oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
-            if (msg.clients >= 2 && !pc) {
-              statusEl.textContent = 'Alumno conectado. Iniciando llamada…';
-              startWebRTC();
+            // Si hay alumno, lanzamos/startWebRTC otra vez
+            if (msg.clients >= 2) {
+              statusEl.textContent = 'Alumno conectado. Reconectando llamada…';
+              await startWebRTC();
             }
             break;
           case 'talk':
