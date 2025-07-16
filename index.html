@@ -56,7 +56,7 @@
       margin-top: .3em; font-weight: bold; color: #333;
     }
     #talkBtn {
-      padding: .8em 2em; font-size: 1.1em; margin: 1em 0; margin-top: -30px;
+      padding: .8em 2em; font-size: 1.1em; margin: 1em 0;
       border: none; border-radius: .7em;
       background: #2196f3; color: white;
       cursor: pointer; user-select: none;
@@ -87,7 +87,7 @@
     /* contenedor del teclado SVG */
     #keyboard {
       width: 100%; max-width: 700px;
-      height: 150px; margin: 1.5em auto; margin-bottom: -10px;
+      height: 150px; margin: 1.5em auto;
     }
   </style>
 </head>
@@ -264,12 +264,12 @@
         const sel = document.createElement('select');
         sel.innerHTML = '<option value="">-- Elige tu teclado digital --</option>';
         midiOutputs.forEach((o,i)=>
-          sel.innerHTML += <option value="${i}">${o.name}</option>);
+          sel.innerHTML += `<option value="${i}">${o.name}</option>`);
         sel.onchange = ()=>{
           midiOutDevice = sel.value
             ? midiOutputs[+sel.value] : null;
           midiStatus.textContent = midiOutDevice
-            ? MIDI OUT: ${midiOutDevice.name}
+            ? `MIDI OUT: ${midiOutDevice.name}`
             : 'Usando sonido virtual';
           useVirtual = !midiOutDevice;
         };
@@ -285,7 +285,7 @@
         const selIn = document.createElement('select');
         selIn.innerHTML = '<option value="">-- Elige entrada MIDI --</option>';
         midiInputs.forEach((i,k)=>
-          selIn.innerHTML += <option value="${k}">${i.name}</option>);
+          selIn.innerHTML += `<option value="${k}">${i.name}</option>`);
         selIn.onchange = ()=>{
           if (midiInDevice) midiInDevice.onmidimessage = null;
           midiInDevice = selIn.value
@@ -300,7 +300,7 @@
               }
             };
             midiSendStatus.textContent =
-              Enviando MIDI desde: ${midiInDevice.name};
+              `Enviando MIDI desde: ${midiInDevice.name}`;
           } else {
             midiSendStatus.textContent = '';
           }
@@ -389,7 +389,7 @@
         switch(msg.type){
           case 'stats':
             oyentesEl.textContent=
-              Oyentes conectados: ${msg.clients};
+              `Oyentes conectados: ${msg.clients}`;
             break;
           case 'talk':
             remoteSpeaking = msg.speaking;
