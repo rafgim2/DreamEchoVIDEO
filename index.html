@@ -118,6 +118,19 @@
       <!-- aquí va el teclado SVG -->
       <div id="keyboard"></div>
 
+      <!-- Botón de Simon y mensajería de estado -->
+      <div style="margin: 1em 0;">
+        <button id="simonBtn" style="
+          padding: .6em 1em; font-size: 1.1em;
+          border:none; border-radius:.7em;
+          background:#4caf50; color:white;
+          cursor:pointer;
+        ">
+          🎮 Jugar Simon
+        </button>
+      </div>
+      <div id="simonStatus" style="font-size:1.5em; font-weight:bold; margin:0.5em;"></div>
+
       <button id="talkBtn">📢 Mantén pulsado para hablar</button>
 
       <div class="midi-section">
@@ -149,21 +162,23 @@
 
   <script>
     let pin = null;
-    const pinSection      = document.getElementById('pinSection');
-    const pinInput        = document.getElementById('pinInput');
-    const pinBtn          = document.getElementById('pinBtn');
-    const mainContent     = document.getElementById('mainContent');
-    const statusEl        = document.getElementById('status');
-    const oyentesEl       = document.getElementById('recuentoOyentes');
-    const localVideo      = document.getElementById('localVideo');
-    const remoteVideo     = document.getElementById('remoteVideo');
-    const talkBtn         = document.getElementById('talkBtn');
-    const virtualBtn      = document.getElementById('virtualBtn');
+    const pinSection        = document.getElementById('pinSection');
+    const pinInput          = document.getElementById('pinInput');
+    const pinBtn            = document.getElementById('pinBtn');
+    const mainContent       = document.getElementById('mainContent');
+    const statusEl          = document.getElementById('status');
+    const oyentesEl         = document.getElementById('recuentoOyentes');
+    const localVideo        = document.getElementById('localVideo');
+    const remoteVideo       = document.getElementById('remoteVideo');
+    const talkBtn           = document.getElementById('talkBtn');
+    const virtualBtn        = document.getElementById('virtualBtn');
     const midiOutSelectCont = document.getElementById('midiOutSelectCont');
-    const midiStatus      = document.getElementById('midiStatus');
+    const midiStatus        = document.getElementById('midiStatus');
     const midiInSelectCont  = document.getElementById('midiInSelectCont');
     const midiSendStatus    = document.getElementById('midiSendStatus');
-    const keyboardEl      = document.getElementById('keyboard');
+    const keyboardEl        = document.getElementById('keyboard');
+    const simonBtn          = document.getElementById('simonBtn');
+    const simonStatus       = document.getElementById('simonStatus');
 
     let ws, pc, piano;
     let realAudioTrack, silentAudioTrack, audioSender;
@@ -171,6 +186,11 @@
     let midiAccess, midiInputs = [], midiOutputs = [], midiOutDevice, midiInDevice, midiChannel;
     let synth, useVirtual = true;
 
+    // Variables Simon
+    let simonSeq = [], turn = null, step = 0;
+    const myRole = 'profesor';
+
+    // ————— Funciones MIDI/Audio/Teclado —————
     function createSilentAudioTrack() {
       const ctx = new (window.AudioContext||window.webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -223,11 +243,12 @@
       ws.send(JSON.stringify(obj));
     }
 
+    // ————— WebRTC + WebSocket —————
     async function startWebRTC() {
       pc = new RTCPeerConnection({
         iceServers:[{ urls:'stun:stun.l.google.com:19302' }]
       });
-      // canal de datos MIDI
+      // canal de datos MIDI (usado también para Simon)
       midiChannel = pc.createDataChannel('midi',{ ordered:true });
       midiChannel.onmessage = ({ data }) =>
         handleMidiMessage(JSON.parse(data));
@@ -253,6 +274,7 @@
       };
     }
 
+    // ————— Configurar MIDI local —————
     async function setupMIDI() {
       midiAccess  = await navigator.requestMIDIAccess();
       midiInputs  = Array.from(midiAccess.inputs.values());
@@ -279,7 +301,7 @@
           '(No hay salidas MIDI físicas conectadas)';
       }
 
-      // ENTRADAS MIDI (del alumno al profesor)
+      // ENTRADAS MIDI (del alumno al profe)
       midiInSelectCont.innerHTML = '';
       if (midiInputs.length) {
         const selIn = document.createElement('select');
@@ -312,6 +334,7 @@
       }
     }
 
+    // ————— Sampler virtual —————
     async function setupSampler() {
       if (synth) return;
       await Tone.start();
@@ -331,32 +354,100 @@
       }).toDestination();
     }
 
+    // ————— Manejo de mensajes MIDI y Simon —————
     function handleMidiMessage(msg) {
-      const [st,note,vel] = msg.data;
-      const cmd = st & 0xf0;
-      const noteName = Tone.Frequency(note,'midi').toNote();
-
-      // iluminar/apagar tecla SVG del alumno
-      if (cmd === 0x90 && vel>0) {
-        piano.fillKey(noteName);
-      } else if (cmd===0x80|| (cmd===0x90&&vel===0)) {
-        piano.clearKey(noteName);
-      }
-
-      // reproducir sonido local
-      if (!useVirtual && midiOutDevice) {
-        midiOutDevice.send(new Uint8Array(msg.data));
-      } else {
-        if (!synth) return;
-        const freq = Tone.Frequency(note,'midi').toFrequency();
-        if (cmd===0x90 && vel>0) {
-          synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
+      // flujo normal MIDI
+      if (msg.data) {
+        const [st,note,vel] = msg.data;
+        const cmd = st & 0xf0;
+        const noteName = Tone.Frequency(note,'midi').toNote();
+        if (cmd === 0x90 && vel>0) piano.fillKey(noteName);
+        else piano.clearKey(noteName);
+        if (!useVirtual && midiOutDevice) {
+          midiOutDevice.send(new Uint8Array(msg.data));
         } else {
-          synth.triggerRelease(freq,Tone.now());
+          if (!synth) return;
+          const freq = Tone.Frequency(note,'midi').toFrequency();
+          if (cmd===0x90 && vel>0) synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
+          else synth.triggerRelease(freq,Tone.now());
         }
+        return;
+      }
+      // flujo Simon
+      if (msg.type === 'simon') {
+        if (!msg.player) {
+          // reproducción de secuencia en remoto
+          piano.fillKey(msg.note);
+          setTimeout(()=> piano.clearKey(msg.note), 500);
+        }
+        // las jugadas de player-validación se hacen localmente
       }
     }
 
+    // ————— Funciones Simon —————
+    function disableKeys() { piano.disable(); }
+    function enableKeys()  { piano.enable(); }
+
+    function pickRandomNote() {
+      const all = piano.getKeys(); 
+      return all[Math.floor(Math.random()*all.length)];
+    }
+
+    function playSequence(done) {
+      disableKeys();
+      let i=0;
+      const iv = setInterval(()=>{
+        const note = simonSeq[i];
+        midiChannel.send(JSON.stringify({ type:'simon', note }));
+        piano.fillKey(note);
+        setTimeout(()=> piano.clearKey(note),500);
+        i++;
+        if (i>=simonSeq.length) {
+          clearInterval(iv);
+          setTimeout(done,300);
+        }
+      }, 800);
+    }
+
+    function nextStep() {
+      const note = pickRandomNote();
+      simonSeq.push(note);
+      playSequence(()=>{
+        turn = (turn==='profesor') ? 'alumno' : 'profesor';
+        step = 0;
+        simonStatus.textContent = `Turno de ${turn.toUpperCase()}: repite ${simonSeq.length} notas`;
+        if (turn==='alumno') enableKeys();
+        else disableKeys();
+      });
+    }
+
+    function startSimon() {
+      simonSeq = [];
+      turn = 'profesor';
+      step = 0;
+      simonStatus.textContent = 'Turno del PROFESOR → Generando nota…';
+      nextStep();
+    }
+
+    piano.on('noteon', noteName => {
+      if (turn !== myRole) return;
+      midiChannel.send(JSON.stringify({ type:'simon', note: noteName, player:true }));
+      if (noteName !== simonSeq[step]) {
+        const winner = (turn==='profesor') ? 'ALUMNO' : 'PROFESOR';
+        simonStatus.innerHTML =
+          `<span style="color:green">${winner} GANADOR</span> — <span style="color:red">${myRole.toUpperCase()} PIERDE</span>`;
+        disableKeys();
+        return;
+      }
+      step++;
+      if (step >= simonSeq.length) {
+        nextStep();
+      }
+    });
+
+    simonBtn.addEventListener('click', startSimon);
+
+    // ————— Evento Principal Pin + Arranque —————
     pinBtn.onclick = ()=>{
       const v = pinInput.value.trim();
       if (!v) return;
@@ -364,7 +455,6 @@
       pinSection.style.display = 'none';
       mainContent.style.display = 'block';
 
-      // inicializar piano SVG de 88 teclas
       piano = new PianoKeys.Keyboard(keyboardEl,{
         width:  keyboardEl.clientWidth,
         height: keyboardEl.clientHeight,
@@ -373,7 +463,6 @@
         activeColour: '#4a4'
       });
 
-      // iniciar WebSocket/WebRTC
       ws = new WebSocket('wss://dreamecho.onrender.com');
       ws.onopen = ()=>{
         statusEl.textContent='Conectado, esperando oferta…';
@@ -383,13 +472,10 @@
         startWebRTC();
       };
       ws.onmessage = async ({data})=>{
-        const msg = JSON.parse(
-          typeof data==='string'?data:await data.text()
-        );
+        const msg = JSON.parse(typeof data==='string'?data:await data.text());
         switch(msg.type){
           case 'stats':
-            oyentesEl.textContent=
-              `Oyentes conectados: ${msg.clients}`;
+            oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
             break;
           case 'talk':
             remoteSpeaking = msg.speaking;
@@ -398,20 +484,14 @@
           case 'signal':
             if(msg.pin!==pin) return;
             if(msg.offer){
-              await pc.setRemoteDescription(
-                new RTCSessionDescription(msg.offer)
-              );
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
               const ans = await pc.createAnswer();
               await pc.setLocalDescription(ans);
               sendMessage({type:'signal',answer:pc.localDescription});
             } else if(msg.answer){
-              await pc.setRemoteDescription(
-                new RTCSessionDescription(msg.answer)
-              );
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
             } else if(msg.candidate){
-              await pc.addIceCandidate(
-                new RTCIceCandidate(msg.candidate)
-              );
+              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
             }
             break;
         }
