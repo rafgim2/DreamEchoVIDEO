@@ -124,7 +124,8 @@
     <h1>DreamEcho - Profesor</h1>
     <p><a href="https://www.youtube.com/@rafgim" target="_blank" rel="noopener">© By Rafael Gimeno</a></p>
 
-    <div class="pin-section">
+    <!-- Sección de PIN con id para ocultar -->
+    <div id="pinSection" class="pin-section">
       <input type="text" id="pinInput" placeholder="Introduce tu PIN de la sala">
       <button id="pinBtn">Crear sala</button>
     </div>
@@ -166,15 +167,18 @@
 
   <script>
     let pin = null;
-    const pinInput = document.getElementById('pinInput');
-    const pinBtn = document.getElementById('pinBtn');
+    const pinSection  = document.getElementById('pinSection');
+    const pinInput    = document.getElementById('pinInput');
+    const pinBtn      = document.getElementById('pinBtn');
     const mainContent = document.getElementById('mainContent');
 
     pinBtn.onclick = () => {
-      if (!pinInput.value.trim()) return;
-      pin = pinInput.value.trim();
-      pinInput.disabled = true;
-      pinBtn.disabled = true;
+      const value = pinInput.value.trim();
+      if (!value) return;
+      pin = value;
+      // Ocultamos la sección de PIN
+      pinSection.style.display = 'none';
+      // Mostramos el contenido principal
       mainContent.style.display = 'block';
       initConnection();
     };
