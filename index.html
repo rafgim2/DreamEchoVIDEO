@@ -6,37 +6,130 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 1em; text-align: center; background-color: #c1f7f2; margin: 0; min-height: 100vh; overflow-x: hidden; overflow-y: auto; }
-    .marco { width: 90%; max-width: 700px; margin: 1em auto; padding: 1em; background: white; border: 5px solid blue; border-radius: 1em; box-sizing: border-box; }
+    body {
+      font-family: sans-serif;
+      padding: 1em;
+      text-align: center;
+      background-color: #c1f7f2;
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+    .marco {
+      width: 90%;
+      max-width: 700px;
+      margin: 1em auto;
+      padding: 1em;
+      background: white;
+      border: 5px solid blue;
+      border-radius: 1em;
+      box-sizing: border-box;
+    }
     h1 { font-size: 2.5em; margin: 0.2em 0; }
-    #pinSection { margin-bottom: 1.5em; }
-    #pinSection input { font-size: 1.2em; padding: 0.4em; width: 60%; max-width: 200px; text-align: center; }
-    #pinSection button { font-size: 1.1em; padding: 0.6em 1.2em; margin-left: 0.5em; border: none; border-radius: 0.5em; background: #2196f3; color: white; cursor: pointer; }
-    #appContent { display: none; }
-    .video-container { display: flex; gap: 1em; justify-content: center; flex-wrap: nowrap; margin: 1em 0; }
-    .video-block { flex: 1 1 45%; display: flex; flex-direction: column; align-items: center; }
-    .video-block video { width: 100%; max-height: 250px; background: black; border-radius: 0.5em; }
-    .video-label { margin-top: 0.3em; font-weight: bold; color: #333; }
-    #talkBtn { padding: 0.8em 2em; font-size: 1.1em; margin: 1em 0; border: none; border-radius: 0.7em; background: #2196f3; color: white; cursor: pointer; user-select: none; }
-    #talkBtn:active { transform: scale(0.96); background: red; }
-    .midi-section { margin: 1.5em 0; text-align: center; }
-    .midi-section h3 { margin-bottom: 0.5em; font-size: 1.2em; }
-    .midi-controls { display: flex; justify-content: center; align-items: center; gap: 1em; margin-bottom: 0.5em; }
-    .midi-controls .label { font-weight: bold; }
-    .midi-controls select { padding: 0.4em; font-size: 1em; }
-    #virtualBtn { padding: 0.6em 1em; font-size: 1em; cursor: pointer; }
-    #midiStatus, #midiSendStatus, #status, #recuentoOyentes { margin-top: 0.5em; color: #555; }
+    .pin-section {
+      margin-bottom: 1em;
+    }
+    .pin-section input {
+      padding: .6em;
+      font-size: 1em;
+      width: 60%;
+      margin-right: .5em;
+    }
+    .pin-section button {
+      padding: .6em 1em;
+      font-size: 1em;
+      cursor: pointer;
+      border: none;
+      border-radius: .7em;
+      background: #2196f3;
+      color: #fff;
+    }
+    #mainContent { display: none; }
+    #recuentoOyentes, #status { font-size: 1.1em; color: #555; margin: 0.5em 0; }
+    .video-container {
+      display: flex;
+      gap: 1em;
+      justify-content: center;
+      flex-wrap: nowrap;
+      margin: 1em 0;
+    }
+    .video-block {
+      flex: 1 1 45%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .video-block video {
+      width: 100%;
+      max-height: 250px;
+      background: black;
+      border-radius: 0.5em;
+    }
+    .video-label {
+      margin-top: 0.3em;
+      font-weight: bold;
+      color: #333;
+    }
+    #talkBtn {
+      padding: 0.8em 2em;
+      font-size: 1.1em;
+      margin: 1em 0;
+      border: none;
+      border-radius: 0.7em;
+      background: #2196f3;
+      color: white;
+      cursor: pointer;
+      user-select: none;
+    }
+    #talkBtn:active {
+      transform: scale(0.96);
+      background: red;
+    }
+    .midi-section {
+      margin: 1.5em 0;
+      text-align: center;
+    }
+    .midi-section h3 {
+      margin-bottom: 0.5em;
+      font-size: 1.2em;
+    }
+    .midi-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1em;
+      margin-bottom: 0.5em;
+    }
+    .midi-controls .label {
+      font-weight: bold;
+    }
+    .midi-controls select {
+      padding: 0.4em;
+      font-size: 1em;
+    }
+    #virtualBtn {
+      padding: 0.6em 1em;
+      font-size: 1em;
+      cursor: pointer;
+    }
+    #midiStatus, #midiSendStatus {
+      margin-top: 0.5em;
+      color: #555;
+    }
   </style>
 </head>
 <body>
   <div class="marco">
     <h1>DreamEcho - Alumno</h1>
     <p><a href="https://www.youtube.com/@rafgim" target="_blank" rel="noopener">© By Rafael Gimeno</a></p>
-    <div id="pinSection">
-      <input type="text" id="pinInput" placeholder="Introduce el PIN">
-      <button id="joinRoomBtn">Unirse a sala</button>
+
+    <div class="pin-section">
+      <input type="text" id="pinInput" placeholder="Introduce el PIN de la sala">
+      <button id="pinBtn">Unirse</button>
     </div>
-    <div id="appContent">
+
+    <div id="mainContent">
       <div class="video-container">
         <div class="video-block">
           <video id="localVideo" autoplay muted playsinline></video>
@@ -47,7 +140,9 @@
           <p class="video-label">Profesor</p>
         </div>
       </div>
+
       <button id="talkBtn">📢 Mantén pulsado para hablar</button>
+
       <div class="midi-section">
         <h3>MIDI recibido (del profesor):</h3>
         <div class="midi-controls">
@@ -57,109 +152,54 @@
         </div>
         <div id="midiStatus"></div>
       </div>
+
       <div class="midi-section">
         <h3>MIDI a enviar (tu piano):</h3>
         <div id="midiInSelectCont"></div>
         <div id="midiSendStatus"></div>
       </div>
+
       <p id="recuentoOyentes">Oyentes conectados: --</p>
       <p id="status">Esperando conexión…</p>
     </div>
   </div>
+
   <script>
-    let pin, ws, pc;
-    let localStream, realAudioTrack, silentAudioTrack, audioSender;
-    let pressingTalk = false, remoteSpeaking = false;
-    let midiAccess, midiInputs = [], midiOutputs = [], midiOutDevice, midiInDevice, midiChannel;
-    let synth, useVirtual = true;
+    let pin = null;
+    const pinInput = document.getElementById('pinInput');
+    const pinBtn = document.getElementById('pinBtn');
+    const mainContent = document.getElementById('mainContent');
 
-    const pinSection      = document.getElementById('pinSection');
-    const pinInput        = document.getElementById('pinInput');
-    const joinRoomBtn     = document.getElementById('joinRoomBtn');
-    const appContent      = document.getElementById('appContent');
-    const statusEl        = document.getElementById('status');
-    const oyentesEl       = document.getElementById('recuentoOyentes');
-    const localVideo      = document.getElementById('localVideo');
-    const remoteVideo     = document.getElementById('remoteVideo');
-    const talkBtn         = document.getElementById('talkBtn');
-    const virtualBtn      = document.getElementById('virtualBtn');
-    const midiOutSelectCont  = document.getElementById('midiOutSelectCont');
-    const midiStatus      = document.getElementById('midiStatus');
-    const midiInSelectCont   = document.getElementById('midiInSelectCont');
-    const midiSendStatus  = document.getElementById('midiSendStatus');
-
-    joinRoomBtn.onclick = async () => {
-      const val = pinInput.value.trim();
-      if (!val) { alert('Introduce un PIN válido.'); return; }
-      pin = val;
-      pinSection.style.display = 'none';
-      appContent.style.display = 'block';
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        realAudioTrack = localStream.getAudioTracks()[0];
-        silentAudioTrack = createSilentAudioTrack();
-        localVideo.srcObject = localStream;
-      } catch {
-        statusEl.textContent = 'No se pudo acceder a cámara/micro.';
-        return;
-      }
+    pinBtn.onclick = () => {
+      if (!pinInput.value.trim()) return;
+      pin = pinInput.value.trim();
+      pinInput.disabled = true;
+      pinBtn.disabled = true;
+      mainContent.style.display = 'block';
       initConnection();
-      setupMIDI();
-      setupSampler();
     };
 
-    function initConnection() {
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${proto}://${location.host}`);
-      pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    const statusEl = document.getElementById('status');
+    const oyentesEl = document.getElementById('recuentoOyentes');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const talkBtn = document.getElementById('talkBtn');
+    const virtualBtn = document.getElementById('virtualBtn');
+    const midiOutSelectCont = document.getElementById('midiOutSelectCont');
+    const midiStatus = document.getElementById('midiStatus');
+    const midiInSelectCont = document.getElementById('midiInSelectCont');
+    const midiSendStatus = document.getElementById('midiSendStatus');
 
-      localStream.getTracks().forEach(track => {
-        const sender = pc.addTrack(track, localStream);
-        if (track.kind === 'audio') audioSender = sender;
-      });
-      if (audioSender) audioSender.replaceTrack(silentAudioTrack);
+    let ws, pc;
+    let localStream = null, realAudioTrack = null, silentAudioTrack = null, audioSender = null;
+    let pressingTalk = false, remoteSpeaking = false;
+    let midiAccess = null, midiInputs = [], midiOutputs = [];
+    let midiOutDevice = null, midiInDevice = null, midiChannel = null;
+    let synth = null, useVirtual = true;
 
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'join', role: 'alumno', pin }));
-        statusEl.textContent = 'Conectado, esperando oferta…';
-      };
-
-      ws.onmessage = async ({ data }) => {
-        const msg = JSON.parse(typeof data === 'string' ? data : await data.text());
-        switch (msg.type) {
-          case 'stats':
-            oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
-            break;
-          case 'talk':
-            remoteSpeaking = msg.speaking;
-            updateMicState();
-            break;
-          case 'signal':
-            if (msg.offer) {
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              ws.send(JSON.stringify({ type: 'signal', answer: pc.localDescription }));
-            } else if (msg.answer) {
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-            } else if (msg.candidate) {
-              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            }
-            break;
-        }
-      };
-      ws.onerror = () => { statusEl.textContent = 'Error en la conexión.'; };
-      ws.onclose = () => { statusEl.textContent = 'Conexión cerrada.'; };
-
-      pc.onicecandidate = ({ candidate }) => { if (candidate) ws.send(JSON.stringify({ type: 'signal', candidate })); };
-      pc.ontrack = ev => { remoteVideo.srcObject = ev.streams[0]; };
-      pc.ondatachannel = ev => {
-        if (ev.channel.label === 'midi') {
-          midiChannel = ev.channel;
-          midiChannel.onopen = () => midiSendStatus.textContent += ' | Canal MIDI listo';
-          midiChannel.onmessage = ({ data }) => handleMidiMessage(JSON.parse(data));
-        }
-      };
+    function sendMessage(obj) {
+      obj.pin = pin;
+      ws.send(JSON.stringify(obj));
     }
 
     function createSilentAudioTrack() {
@@ -173,29 +213,52 @@
       return dst.stream.getAudioTracks()[0];
     }
 
-    function updateMicState() {
-      if (!audioSender) return;
-      const active = pressingTalk && !remoteSpeaking;
-      audioSender.replaceTrack(active ? realAudioTrack : silentAudioTrack);
+    async function initLocalVideo() {
+      if (localStream) return;
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      realAudioTrack = localStream.getAudioTracks()[0];
+      silentAudioTrack = createSilentAudioTrack();
+      localVideo.srcObject = localStream;
+      localStream.getTracks().forEach(t => {
+        let sender = pc.addTrack(t, localStream);
+        if (t.kind === 'audio') audioSender = sender;
+      });
+      if (audioSender && audioSender.track !== silentAudioTrack)
+        audioSender.replaceTrack(silentAudioTrack);
     }
 
-    ['mousedown','touchstart'].forEach(e => talkBtn.addEventListener(e, () => {
+    function updateMicState() {
+      if (!audioSender) return;
+      const activar = pressingTalk && !remoteSpeaking;
+      if (activar) {
+        if (audioSender.track !== realAudioTrack)
+          audioSender.replaceTrack(realAudioTrack);
+      } else {
+        if (audioSender.track !== silentAudioTrack)
+          audioSender.replaceTrack(silentAudioTrack);
+      }
+    }
+
+    function pressTalk() {
       pressingTalk = true;
-      ws.send(JSON.stringify({ type: 'talk', speaking: true }));
+      sendMessage({ type: 'talk', speaking: true });
       talkBtn.style.background = 'red';
       updateMicState();
-    }));
-    ['mouseup','mouseleave','touchend','touchcancel'].forEach(e => talkBtn.addEventListener(e, () => {
+    }
+    function releaseTalk() {
       pressingTalk = false;
-      ws.send(JSON.stringify({ type: 'talk', speaking: false }));
+      sendMessage({ type: 'talk', speaking: false });
       talkBtn.style.background = '';
       updateMicState();
-    }));
+    }
+    ['mousedown','touchstart'].forEach(e => talkBtn.addEventListener(e, pressTalk));
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(e => talkBtn.addEventListener(e, releaseTalk));
 
     async function setupMIDI() {
       midiAccess = await navigator.requestMIDIAccess();
       midiInputs = Array.from(midiAccess.inputs.values());
       midiOutputs = Array.from(midiAccess.outputs.values());
+
       midiOutSelectCont.innerHTML = '';
       if (midiOutputs.length) {
         const sel = document.createElement('select');
@@ -210,6 +273,7 @@
       } else {
         midiOutSelectCont.textContent = '(No hay salidas MIDI físicas conectadas)';
       }
+
       midiInSelectCont.innerHTML = '';
       if (midiInputs.length) {
         const selIn = document.createElement('select');
@@ -220,9 +284,8 @@
           midiInDevice = selIn.value ? midiInputs[+selIn.value] : null;
           if (midiInDevice) {
             midiInDevice.onmidimessage = ({ data }) => {
-              if (midiChannel && midiChannel.readyState === 'open') {
-                midiChannel.send(JSON.stringify({ data: Array.from(data) }));
-              }
+              if (midiChannel && midiChannel.readyState === 'open')
+                midiChannel.send(JSON.stringify({ data: Array.from(data), from: 'alumno' }));
             };
             midiSendStatus.textContent = `Enviando MIDI desde: ${midiInDevice.name}`;
           } else {
@@ -235,15 +298,21 @@
       }
     }
 
+    virtualBtn.onclick = async () => {
+      useVirtual = true;
+      midiStatus.textContent = 'Usando sonido virtual';
+      await setupSampler();
+    };
+
     async function setupSampler() {
       if (synth) return;
       await Tone.start();
       synth = new Tone.Sampler({
         urls: {
-          A0:'A0.mp3', C1:'C1.mp3', 'D#1':'Ds1.mp3', 'F#1':'Fs1.mp3',
-          A1:'A1.mp3', C2:'C2.mp3', 'D#2':'Ds2.mp3', 'F#2':'Fs2.mp3',
-          A2:'A2.mp3', C3:'C3.mp3', 'D#3':'Ds3.mp3', 'F#3':'Fs3.mp3',
-          A3:'A3.mp3', C4:'C4.mp3', 'D#4':'Ds4.mp3', 'F#4':'Fs4.mp3',
+          A0:'A0.mp3', C1:'C1.mp3','D#1':'Ds1.mp3','F#1':'Fs1.mp3',
+          A1:'A1.mp3', C2:'C2.mp3','D#2':'Ds2.mp3','F#2':'Fs2.mp3',
+          A2:'A2.mp3', C3:'C3.mp3','D#3':'Ds3.mp3','F#3':'Fs3.mp3',
+          A3:'A3.mp3', C4:'C4.mp3','D#4':'Ds4.mp3','F#4':'Fs4.mp3',
           A4:'A4.mp3', C5:'C5.mp3','D#5':'Ds5.mp3','F#5':'Fs5.mp3',
           A5:'A5.mp3', C6:'C6.mp3','D#6':'Ds6.mp3','F#6':'Fs6.mp3',
           A7:'A7.mp3', C8:'C8.mp3'
@@ -255,18 +324,74 @@
     }
 
     function handleMidiMessage(msg) {
-      const [st,note,vel] = msg.data;
+      const [st, note, vel] = msg.data;
       const cmd = st & 0xf0;
       if (!useVirtual && midiOutDevice) {
         midiOutDevice.send(new Uint8Array(msg.data));
-      } else if (synth) {
+      } else {
+        if (!synth) return;
         const freq = Tone.Frequency(note,'midi').toFrequency();
-        if (cmd===0x90 && vel>0) {
-          synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
-        } else {
+        if (cmd === 0x90 && vel > 0) {
+          const v = Math.pow(vel/127,2);
+          synth.triggerAttack(freq,Tone.now(),v);
+        } else if (cmd === 0x80 || (cmd === 0x90 && vel===0)) {
           synth.triggerRelease(freq,Tone.now());
         }
       }
+    }
+
+    function initConnection() {
+      ws = new WebSocket('wss://dreamecho.onrender.com');
+      pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+      ws.onopen = () => {
+        statusEl.textContent = 'Conectado, esperando oferta…';
+        sendMessage({ type: 'ping' });
+        setupMIDI();
+        setupSampler();
+        initLocalVideo();
+      };
+      ws.onmessage = async ({ data }) => {
+        const msg = JSON.parse(typeof data==='string'?data:await data.text());
+        switch(msg.type) {
+          case 'stats':
+            oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
+            break;
+          case 'talk':
+            remoteSpeaking = msg.speaking;
+            updateMicState();
+            break;
+          case 'signal':
+            if (msg.pin !== pin) return;
+            if (msg.offer) {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              sendMessage({ type:'signal', answer: pc.localDescription });
+            } else if (msg.answer) {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+            } else if (msg.candidate) {
+              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            }
+            break;
+        }
+      };
+      ws.onerror = () => { statusEl.textContent = 'Error en la conexión.'; };
+      ws.onclose = () => { statusEl.textContent = 'Conexión cerrada.'; };
+
+      pc.onicecandidate = ({ candidate }) => {
+        if(candidate) sendMessage({ type:'signal', candidate });
+      };
+      pc.ontrack = ev => {
+        remoteVideo.srcObject = ev.streams[0];
+      };
+      pc.ondatachannel = ev => {
+        if(ev.channel.label==='midi') {
+          midiChannel = ev.channel;
+          midiChannel.onopen = () => midiSendStatus.textContent += ' | Canal MIDI listo';
+          midiChannel.onmessage = ({ data }) => handleMidiMessage(JSON.parse(data));
+        }
+      };
     }
   </script>
 </body>
