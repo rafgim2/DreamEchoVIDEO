@@ -86,7 +86,7 @@
     }
     /* contenedor del teclado SVG */
     #keyboard {
-      width: 100%; max-width: 700px; 
+      width: 100%; max-width: 700px;
       height: 150px; margin: 1.5em auto; margin-bottom: -10px;
     }
   </style>
@@ -115,7 +115,6 @@
         </div>
       </div>
 
-      <!-- aquí va el teclado SVG -->
       <div id="keyboard"></div>
 
       <button id="talkBtn">📢 Mantén pulsado para hablar</button>
@@ -227,7 +226,6 @@
       pc = new RTCPeerConnection({
         iceServers:[{ urls:'stun:stun.l.google.com:19302' }]
       });
-      // canal de datos MIDI
       midiChannel = pc.createDataChannel('midi',{ ordered:true });
       midiChannel.onmessage = ({ data }) =>
         handleMidiMessage(JSON.parse(data));
@@ -331,32 +329,6 @@
       }).toDestination();
     }
 
-    function handleMidiMessage(msg) {
-      const [st,note,vel] = msg.data;
-      const cmd = st & 0xf0;
-      const noteName = Tone.Frequency(note,'midi').toNote();
-
-      // iluminar/apagar tecla SVG del alumno
-      if (cmd === 0x90 && vel>0) {
-        piano.fillKey(noteName);
-      } else if (cmd===0x80|| (cmd===0x90&&vel===0)) {
-        piano.clearKey(noteName);
-      }
-
-      // reproducir sonido local
-      if (!useVirtual && midiOutDevice) {
-        midiOutDevice.send(new Uint8Array(msg.data));
-      } else {
-        if (!synth) return;
-        const freq = Tone.Frequency(note,'midi').toFrequency();
-        if (cmd===0x90 && vel>0) {
-          synth.triggerAttack(freq,Tone.now(),Math.pow(vel/127,2));
-        } else {
-          synth.triggerRelease(freq,Tone.now());
-        }
-      }
-    }
-
     pinBtn.onclick = ()=>{
       const v = pinInput.value.trim();
       if (!v) return;
@@ -373,14 +345,13 @@
         activeColour: '#4a4'
       });
 
-      // iniciar WebSocket/WebRTC
+      // websocket + MIDI + sampler, espera al stats para lanzar WebRTC
       ws = new WebSocket('wss://dreamecho.onrender.com');
       ws.onopen = ()=>{
-        statusEl.textContent='Conectado, esperando oferta…';
-        sendMessage({type:'ping'});
+        statusEl.textContent = 'Conectado, esperando al alumno…';
+        sendMessage({ type:'ping' });
         setupMIDI();
         setupSampler();
-        startWebRTC();
       };
       ws.onmessage = async ({data})=>{
         const msg = JSON.parse(
@@ -388,8 +359,12 @@
         );
         switch(msg.type){
           case 'stats':
-            oyentesEl.textContent=
-              `Oyentes conectados: ${msg.clients}`;
+            oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
+            // lanzamos la negociación al haber al menos dos participantes
+            if (msg.clients >= 2 && !pc) {
+              statusEl.textContent = 'Alumno conectado. Iniciando llamada…';
+              startWebRTC();
+            }
             break;
           case 'talk':
             remoteSpeaking = msg.speaking;
