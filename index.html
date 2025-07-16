@@ -88,22 +88,6 @@
       width: 100%; max-width: 700px; 
       height: 150px; margin: 1.5em auto; margin-bottom: -10px;
     }
-    /* SIMON */
-    #simonBtn {
-      background: #ff5722;
-      color: #fff;
-      padding: .8em 1.5em;
-      border: none;
-      border-radius: .7em;
-      cursor: pointer;
-      margin: 1em 0;
-      font-size: 1em;
-    }
-    #simonStatus {
-      font-size: 1.1em;
-      color: #d84315;
-      margin: .5em 0;
-    }
   </style>
 </head>
 <body>
@@ -129,10 +113,6 @@
           <p class="video-label">Alumno</p>
         </div>
       </div>
-
-      <!-- Botón Simon -->
-      <button id="simonBtn">🎮 Iniciar Simon</button>
-      <p id="simonStatus">Juego inactivo</p><!-- SIMON status -->
 
       <div id="keyboard"></div>
       <button id="talkBtn">📢 Mantén pulsado para hablar</button>
@@ -171,12 +151,6 @@
     let midiAccess, midiInputs = [], midiOutputs = [], midiOutDevice, midiInDevice, midiChannel;
     let synth, useVirtual = true;
 
-    // SIMON state
-    let inSimon = false;
-    let simonSeq = [];
-    let simonTurn = null; // 'profesor' o 'alumno'
-    let simonIndex = 0;
-
     const pinSection        = document.getElementById('pinSection');
     const pinInput          = document.getElementById('pinInput');
     const pinBtn            = document.getElementById('pinBtn');
@@ -192,10 +166,8 @@
     const midiInSelectCont  = document.getElementById('midiInSelectCont');
     const midiSendStatus    = document.getElementById('midiSendStatus');
     const keyboardEl        = document.getElementById('keyboard');
-    const simonBtn          = document.getElementById('simonBtn');
-    const simonStatus       = document.getElementById('simonStatus');
 
-    // Manejo de conexión y UI
+    // Extraemos la lógica de conexión en una función reutilizable
     async function connectWithPin() {
       pin = pinInput.value.trim();
       if (!pin) return;
@@ -222,13 +194,13 @@
         const msg = JSON.parse(typeof data === 'string' ? data : await data.text());
         switch (msg.type) {
           case 'stats':
-            oyentesEl.textContent = `Oyentes conectados: ${msg.clients}`;
+            oyentesEl.textContent = Oyentes conectados: ${msg.clients};
+            // al detectar dos clientes, volvemos a disparar la conexión WebRTC
             if (msg.clients >= 2) {
               statusEl.textContent = 'Alumno conectado. Iniciando llamada…';
               startWebRTC();
             }
             break;
-
           case 'signal':
             if (msg.pin !== pin) return;
             if (msg.offer) {
@@ -242,35 +214,9 @@
               await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
             }
             break;
-
           case 'talk':
             remoteSpeaking = msg.speaking;
             updateMicState();
-            break;
-
-          // SIMON messages
-          case 'simon':
-            switch (msg.action) {
-              case 'start':
-                inSimon = true;
-                simonSeq = [];
-                simonTurn = 'profesor';
-                simonIndex = 0;
-                simonStatus.textContent = 'Simon iniciado: turno del profe';
-                break;
-              case 'sequence':
-                // Ilumina la última nota de la secuencia
-                const lastNote = msg.sequence[msg.sequence.length - 1];
-                piano.fillKey(Tone.Frequency(lastNote, 'midi').toNote());
-                break;
-              case 'fail':
-                inSimon = false;
-                simonStatus.textContent = `${msg.who} ha fallado. Fin de Simon.`;
-                break;
-            }
-            break;
-
-          default:
             break;
         }
       };
@@ -286,19 +232,6 @@
       ws.send(JSON.stringify(obj));
     }
 
-    // SIMON: inicio de partida
-    simonBtn.addEventListener('click', () => {
-      if (!inSimon) {
-        inSimon = true;
-        simonSeq = [];
-        simonTurn = 'profesor';
-        simonIndex = 0;
-        simonStatus.textContent = 'Simon iniciado: turno del profe';
-        sendMessage({ type:'simon', action:'start', pin });
-      }
-    });
-
-    // Crear audio silencioso
     function createSilentAudioTrack() {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -370,7 +303,6 @@
       };
     }
 
-    // MIDI & Sampler setup (igual que antes)
     async function setupMIDI() {
       midiAccess = await navigator.requestMIDIAccess();
       midiInputs = Array.from(midiAccess.inputs.values());
@@ -380,10 +312,10 @@
       if (midiOutputs.length) {
         const sel = document.createElement('select');
         sel.innerHTML = '<option value="">-- Elige tu teclado digital --</option>';
-        midiOutputs.forEach((o,i) => sel.innerHTML += `<option value="${i}">${o.name}</option>`);
+        midiOutputs.forEach((o,i) => sel.innerHTML += <option value="${i}">${o.name}</option>);
         sel.onchange = () => {
           midiOutDevice = sel.value ? midiOutputs[+sel.value] : null;
-          midiStatus.textContent = midiOutDevice ? `MIDI OUT: ${midiOutDevice.name}` : 'Usando sonido virtual';
+          midiStatus.textContent = midiOutDevice ? MIDI OUT: ${midiOutDevice.name} : 'Usando sonido virtual';
           useVirtual = !midiOutDevice;
         };
         midiOutSelectCont.appendChild(sel);
@@ -395,7 +327,7 @@
       if (midiInputs.length) {
         const selIn = document.createElement('select');
         selIn.innerHTML = '<option value="">-- Elige entrada MIDI --</option>';
-        midiInputs.forEach((i,k) => selIn.innerHTML += `<option value="${k}">${i.name}</option>`);
+        midiInputs.forEach((i,k) => selIn.innerHTML += <option value="${k}">${i.name}</option>);
         selIn.onchange = () => {
           if (midiInDevice) midiInDevice.onmidimessage = null;
           midiInDevice = selIn.value ? midiInputs[+selIn.value] : null;
@@ -405,7 +337,7 @@
                 midiChannel.send(JSON.stringify({ data: Array.from(data) }));
               }
             };
-            midiSendStatus.textContent = `Enviando MIDI desde: ${midiInDevice.name}`;
+            midiSendStatus.textContent = Enviando MIDI desde: ${midiInDevice.name};
           } else {
             midiSendStatus.textContent = '';
           }
@@ -435,48 +367,26 @@
       }).toDestination();
     }
 
-    // Manejo de mensajes MIDI, incluyendo SIMON
     function handleMidiMessage(msg) {
       const [st, note, vel] = msg.data;
       const cmd = st & 0xf0;
       const noteName = Tone.Frequency(note,'midi').toNote();
 
-      // Dibuja la tecla
       if (cmd === 0x90 && vel > 0) {
         piano.fillKey(noteName);
       } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
         piano.clearKey(noteName);
       }
 
-      // Enviar al alumno por WebRTC/MIDI
       if (!useVirtual && midiOutDevice) {
         midiOutDevice.send(new Uint8Array(msg.data));
       } else {
+        if (!synth) return;
+        const freq = Tone.Frequency(note,'midi').toFrequency();
         if (cmd === 0x90 && vel > 0) {
-          const freq = Tone.Frequency(note,'midi').toFrequency();
           synth.triggerAttack(freq, Tone.now(), Math.pow(vel/127,2));
         } else {
-          const freq = Tone.Frequency(note,'midi').toFrequency();
           synth.triggerRelease(freq, Tone.now());
-        }
-      }
-
-      // SIMON: turno del profesor
-      if (inSimon && simonTurn === 'profesor') {
-        if (cmd === 0x90 && vel > 0 && simonIndex === simonSeq.length) {
-          // añade la nota a la secuencia
-          simonSeq.push(note);
-          // envía la secuencia al alumno
-          sendMessage({
-            type: 'simon',
-            action: 'sequence',
-            sequence: simonSeq,
-            pin
-          });
-          // cambia turno
-          simonTurn = 'alumno';
-          simonIndex = 0;
-          simonStatus.textContent = `Turno del alumno: repite ${simonSeq.length} notas y añade 1`;
         }
       }
     }
